@@ -1,0 +1,2 @@
+Backend (Node.js con Express): Se elige por su naturaleza asíncrona, que lo hace eficiente para operaciones I/O en la API, y porque permite usar el mismo ecosistema (JavaScript/TypeScript) en cliente y servidor, reduciendo la fricción.
+Frontend (React con Vite): Se elige React por su arquitectura basada en componentes, ideal para separar la capa de presentación (GUI) de la lógica del cliente, y Vite por su extrema rapidez en el entorno de desarrollo y construcción del empaquetado.
