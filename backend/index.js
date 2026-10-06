@@ -1,11 +1,19 @@
+require('dotenv').config(); // Carga las variables de entorno
 const express = require('express');
 const cors = require('cors');
+const mongoose = require('mongoose'); // Importamos mongoose
+
 const { registrarUsuario, loginUsuario, listarUsuarios, comprobarActivo, eliminarUsuario } = require('./logic/userLogic'); // Importamos la lógica
 const app = express();
 const port = process.env.PORT || 3000;
 
 const verificarToken = require('./logic/authMiddleware');
+const verificarAdmin = require('./logic/adminMiddleware');
 
+// Conexión a la base de datos
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => console.log('Conectado a MongoDB local'))
+  .catch(err => console.error('Error conectando a MongoDB:', err));
 
 app.use(cors()); // Permite peticiones desde el frontend (puerto 5173)
 // Middleware para que Express entienda JSON
@@ -41,25 +49,34 @@ app.post('/api/login', async (req, res) => {
 });
 
 
-// Listar usuarios
-app.get('/api/usuarios', verificarToken, (req, res) => {
-  res.json(listarUsuarios());
+// Listar usuarios solo para el admin
+app.get('/api/usuarios', verificarToken, verificarAdmin, async (req, res) => {
+  try {
+    const usuarios = await listarUsuarios();
+    res.json(usuarios);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-// Comprobar activo
-app.get('/api/usuarios/:id/activo', (req, res) => {
+// Comprobar activo solo para el admin
+app.get('/api/usuarios/:id/activo', verificarToken, verificarAdmin, async (req, res) => {
   try {
-    const isActivo = comprobarActivo(req.params.id);
+    const isActivo = await comprobarActivo(req.params.id);
     res.json({ activo: isActivo });
   } catch (error) {
     res.status(404).json({ error: error.message });
   }
 });
 
-// Eliminar usuario
-app.delete('/api/usuarios/:id', (req, res) => {
+// Eliminar usuario solo para el admin y sin poder eliminarse a si mismo
+app.delete('/api/usuarios/:id', verificarToken, verificarAdmin, async (req, res) => {
   try {
-    eliminarUsuario(req.params.id);
+    // Regla del apartado 4.2: El administrador no puede eliminar su propia cuenta
+    if (req.user.id === req.params.id) {
+        return res.status(400).json({ error: "No puedes eliminar tu propia cuenta de administrador" });
+    }
+    await eliminarUsuario(req.params.id);
     res.json({ message: "Usuario eliminado correctamente" });
   } catch (error) {
     res.status(404).json({ error: error.message });
