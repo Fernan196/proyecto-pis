@@ -64,4 +64,4 @@ function eliminarUsuario(id) {
 }
 
 // Exportamos la función y el array para poder testearlos
-module.exports = { registrarUsuario, listarUsuarios, comprobarActivo, eliminarUsuario, users };
+module.exports = { registrarUsuario, loginUsuario, listarUsuarios, comprobarActivo, eliminarUsuario, users };

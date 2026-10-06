@@ -1,8 +1,10 @@
 const express = require('express');
 const cors = require('cors');
-const { registrarUsuario, listarUsuarios, comprobarActivo, eliminarUsuario } = require('./logic/userLogic'); // Importamos la lógica
+const { registrarUsuario, loginUsuario, listarUsuarios, comprobarActivo, eliminarUsuario } = require('./logic/userLogic'); // Importamos la lógica
 const app = express();
 const port = process.env.PORT || 3000;
+
+const verificarToken = require('./logic/authMiddleware');
 
 
 app.use(cors()); // Permite peticiones desde el frontend (puerto 5173)
@@ -40,7 +42,7 @@ app.post('/api/login', async (req, res) => {
 
 
 // Listar usuarios
-app.get('/api/usuarios', (req, res) => {
+app.get('/api/usuarios', verificarToken, (req, res) => {
   res.json(listarUsuarios());
 });
 
