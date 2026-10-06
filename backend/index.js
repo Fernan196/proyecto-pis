@@ -1,5 +1,5 @@
 const express = require('express');
-const { registrarUsuario } = require('./logic/userLogic'); // Importamos la lógica
+const { registrarUsuario, listarUsuarios, comprobarActivo, eliminarUsuario } = require('./logic/userLogic'); // Importamos la lógica
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -21,6 +21,31 @@ app.post('/api/usuarios', (req, res) => {
     res.status(201).json(nuevoUsuario);
   } catch (error) {
     res.status(400).json({ error: error.message });
+  }
+});
+
+// Listar usuarios
+app.get('/api/usuarios', (req, res) => {
+  res.json(listarUsuarios());
+});
+
+// Comprobar activo
+app.get('/api/usuarios/:id/activo', (req, res) => {
+  try {
+    const isActivo = comprobarActivo(req.params.id);
+    res.json({ activo: isActivo });
+  } catch (error) {
+    res.status(404).json({ error: error.message });
+  }
+});
+
+// Eliminar usuario
+app.delete('/api/usuarios/:id', (req, res) => {
+  try {
+    eliminarUsuario(req.params.id);
+    res.json({ message: "Usuario eliminado correctamente" });
+  } catch (error) {
+    res.status(404).json({ error: error.message });
   }
 });
 

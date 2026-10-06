@@ -1,5 +1,5 @@
 // backend/logic/userLogic.test.js
-const { registrarUsuario, users } = require('./userLogic');
+const { registrarUsuario, listarUsuarios, comprobarActivo, eliminarUsuario, users } = require('./userLogic');
 
 describe('Gestión de Usuarios - Capa Lógica', () => {
     beforeEach(() => {
@@ -18,5 +18,28 @@ describe('Gestión de Usuarios - Capa Lógica', () => {
         registrarUsuario('juan@correo.com', '123456');
         // Intentamos registrar el mismo y esperamos que lance un error
         expect(() => registrarUsuario('juan@correo.com', 'otrapass')).toThrow("El usuario ya existe");
+    });
+
+    test('Debe listar los usuarios sin incluir la contraseña', () => {
+    registrarUsuario('ana@correo.com', 'secreta');
+    const lista = listarUsuarios();
+    expect(lista.length).toBe(1);
+    expect(lista[0].password).toBeUndefined(); // Comprueba que no hay contraseña
+    });
+
+    test('Debe comprobar si un usuario está activo', () => {
+        const user = registrarUsuario('luis@correo.com', '123');
+        expect(comprobarActivo(user.id)).toBe(false); // Por defecto nace 'pendiente'
+    
+        user.estado = 'activo'; // Simulamos que se ha activado
+        expect(comprobarActivo(user.id)).toBe(true);
+    });
+
+    test('Debe eliminar un usuario correctamente', () => {
+        const user = registrarUsuario('carlos@correo.com', '123');
+        expect(users.length).toBe(1);
+    
+        eliminarUsuario(user.id);
+        expect(users.length).toBe(0);
     });
 });
