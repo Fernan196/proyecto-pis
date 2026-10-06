@@ -1,8 +1,13 @@
 const express = require('express');
-const { registrarUsuario, listarUsuarios, comprobarActivo, eliminarUsuario } = require('./logic/userLogic'); // Importamos la lógica
+const cors = require('cors');
+const { registrarUsuario, loginUsuario, listarUsuarios, comprobarActivo, eliminarUsuario } = require('./logic/userLogic'); // Importamos la lógica
 const app = express();
 const port = process.env.PORT || 3000;
 
+const verificarToken = require('./logic/authMiddleware');
+
+
+app.use(cors()); // Permite peticiones desde el frontend (puerto 5173)
 // Middleware para que Express entienda JSON
 app.use(express.json());
 
@@ -11,7 +16,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // Capa de Presentación del servidor
-app.post('/api/usuarios', (req, res) => {
+app.post('/api/usuarios', async(req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -24,8 +29,20 @@ app.post('/api/usuarios', (req, res) => {
   }
 });
 
+//Login
+app.post('/api/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const result = await loginUsuario(email, password);
+    res.json(result);
+  } catch (error) {
+    res.status(401).json({ error: error.message });
+  }
+});
+
+
 // Listar usuarios
-app.get('/api/usuarios', (req, res) => {
+app.get('/api/usuarios', verificarToken, (req, res) => {
   res.json(listarUsuarios());
 });
 
