@@ -4,7 +4,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
 const User = require('../data/userModel'); // Importamos la Capa de Datos
-const SECRET_KEY = process.env.JWT_SECRET 
+const SECRET_KEY = process.env.JWT_SECRET || 'clave_secreta_para_los_tests';
 
 const { enviarCorreoConfirmacion } = require('./mailer');
 
