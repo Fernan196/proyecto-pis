@@ -6,6 +6,8 @@ const jwt = require('jsonwebtoken');
 const User = require('../data/userModel'); // Importamos la Capa de Datos
 const SECRET_KEY = process.env.JWT_SECRET 
 
+const { enviarCorreoConfirmacion } = require('./mailer');
+
 async function registrarUsuario(email, password) {
     // Consultamos a la BD si el email ya existe
     const usuarioExistente = await User.findOne({ email });
@@ -21,7 +23,18 @@ async function registrarUsuario(email, password) {
         estado: 'pendiente', // Según el apartado 4.1
         rol: 'usuario'
     });
-    
+   
+    // Generamos un token temporal válido por 1 hora
+    const tokenConfirmacion = jwt.sign({ id: newUser._id }, SECRET_KEY, { expiresIn: '1h' });
+
+    // Si no estamos ejecutando los tests, enviamos el correo
+    if (process.env.NODE_ENV !== 'test') {
+        try {
+            await enviarCorreoConfirmacion(email, tokenConfirmacion);
+        } catch (error) {
+            console.error("Error al enviar el email:", error.message);
+        }
+    }
    
     return newUser;
 }
@@ -61,5 +74,23 @@ async function eliminarUsuario(id) {
     return true;
 }
 
+async function confirmarCuenta(token) {
+    try {
+        // Verificamos que el token sea válido y no haya caducado
+        const decoded = jwt.verify(token, SECRET_KEY);
+        const user = await User.findById(decoded.id);
+        
+        if (!user) throw new Error("Usuario no encontrado");
+        if (user.estado === 'activo') return true; // Si ya estaba activo, no hacemos nada
+
+        // Cambiamos el estado a activo y guardamos
+        user.estado = 'activo';
+        await user.save();
+        return true;
+    } catch (error) {
+        throw new Error("El enlace de confirmación es inválido o ha expirado.");
+    }
+}
+
 // Exportamos la función y el array para poder testearlos
-module.exports = { registrarUsuario, loginUsuario, listarUsuarios, comprobarActivo, eliminarUsuario };
+module.exports = { registrarUsuario, loginUsuario, listarUsuarios, comprobarActivo, eliminarUsuario, confirmarCuenta };
