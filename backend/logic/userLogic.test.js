@@ -1,3 +1,7 @@
+// Cargar variables de entorno para los tests
+require('dotenv').config();
+
+
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
@@ -5,6 +9,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const { registrarUsuario, listarUsuarios, comprobarActivo, eliminarUsuario, users } = require('./userLogic');
 
 const User = require('../data/userModel'); // Importamos el modelo real
+
 
 // Aumentamos el tiempo de espera a 60 segundos para que le dé tiempo a descargar MongoDB
 jest.setTimeout(60000);

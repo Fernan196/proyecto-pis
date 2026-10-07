@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose'); // Importamos mongoose
 
-const { registrarUsuario, loginUsuario, listarUsuarios, comprobarActivo, eliminarUsuario } = require('./logic/userLogic'); // Importamos la lógica
+const { registrarUsuario, loginUsuario, listarUsuarios, comprobarActivo, eliminarUsuario, confirmarCuenta } = require('./logic/userLogic'); // Importamos la lógica
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -23,6 +23,8 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'API funcionando' });
 });
 
+
+
 // Capa de Presentación del servidor
 app.post('/api/usuarios', async(req, res) => {
   try {
@@ -35,6 +37,28 @@ app.post('/api/usuarios', async(req, res) => {
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
+});
+
+// Endpoint para confirmar el correo desde el enlace
+app.get('/api/usuarios/confirmar/:token', async (req, res) => {
+    try {
+        await confirmarCuenta(req.params.token);
+        // Si va bien, mostramos un mensaje de éxito HTML
+        res.send(`
+            <div style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+                <h1 style="color: #4CAF50;">¡Cuenta activada con éxito! 🎉</h1>
+                <p>Tu correo ha sido verificado. Ya puedes volver a la aplicación e iniciar sesión.</p>
+            </div>
+        `);
+    } catch (error) {
+        // Si el token es falso o caducado, mostramos error
+        res.status(400).send(`
+            <div style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+                <h1 style="color: #f44336;">Error al activar la cuenta</h1>
+                <p>${error.message}</p>
+            </div>
+        `);
+    }
 });
 
 //Login
