@@ -22,3 +22,25 @@ export async function register(email, password) {
     if (!response.ok) throw new Error(data.error || 'Error en el registro');
     return data;
 }
+
+export const obtenerUsuarios = async (token) => {
+    const response = await fetch('http://localhost:3000/api/usuarios', {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+    if (!response.ok) throw new Error('No autorizado');
+    return response.json();
+};
+
+export const eliminarUsuario = async (id, token) => {
+    const response = await fetch(`http://localhost:3000/api/usuarios/${id}`, {
+        method: 'DELETE',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+    if (!response.ok) throw new Error('Error al eliminar');
+    return response.json();
+};
