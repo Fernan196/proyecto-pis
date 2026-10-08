@@ -1,13 +1,26 @@
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation} from 'react-router-dom';
 
-export default function ProtectedRoute({ children }) {
-  const token = localStorage.getItem('token');
-  
-  // Si no hay token guardado, redirige automáticamente al login
-  if (!token) {
-    return <Navigate to="/login" replace />;
-  }
-  
-  // Si hay token, renderiza el componente hijo (ej. el Dashboard)
-  return children;
-}
+const ProtectedRoute = ({ children }) => {
+    // Usamos useLocation para poder leer la URL actual
+    const location = useLocation();
+    
+    // 1. Miramos si la URL trae un token (venimos de GitHub)
+    const urlParams = new URLSearchParams(location.search);
+    const tokenFromUrl = urlParams.get('token');
+
+    if (tokenFromUrl) {
+        // Lo guardamos inmediatamente antes de que salte el bloqueo
+        localStorage.setItem('token', tokenFromUrl);
+    }
+
+    // 2. Comprobamos el token normal en localStorage
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+        return <Navigate to="/login" />;
+    }
+
+    return children;
+};
+
+export default ProtectedRoute;

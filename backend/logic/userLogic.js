@@ -92,5 +92,60 @@ async function confirmarCuenta(token) {
     }
 }
 
+async function loginConGitHub(code) {
+    // 1. Intercambiamos el 'code' por un token de acceso de GitHub
+    const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json' // Pedimos que nos responda en JSON
+        },
+        body: JSON.stringify({
+            client_id: process.env.GITHUB_CLIENT_ID,
+            client_secret: process.env.GITHUB_CLIENT_SECRET,
+            code: code
+        })
+    });
+    const tokenData = await tokenResponse.json();
+    if (tokenData.error) throw new Error("Error al autenticar con GitHub");
+
+    // 2. Usamos el token de GitHub para pedir el email del usuario
+    const userResponse = await fetch('https://api.github.com/user/emails', {
+        headers: { 'Authorization': `Bearer ${tokenData.access_token}`,
+                    'User-Agent': 'Proyecto PIS'
+                }
+    });
+    const emails = await userResponse.json();
+    
+    // Buscamos el email principal de su cuenta
+    const emailPrincipal = emails.find(e => e.primary).email;
+
+    // 3. Buscamos al usuario en nuestra BBDD
+    let user = await User.findOne({ email: emailPrincipal });
+    
+    if (!user) {
+        // Si no existe, lo registramos automáticamente como activo
+        user = await User.create({
+            email: emailPrincipal,
+            password: 'OAUTH_GITHUB_USER', // Contraseña inútil por diseño
+            estado: 'activo',
+            rol: 'usuario'
+        });
+    } else if (user.estado !== 'activo') {
+        // Si existía pero estaba pendiente, lo activamos
+        user.estado = 'activo';
+        await user.save();
+    }
+
+    // 4. Generamos nuestro token JWT normal para que el frontend lo entienda
+    const token = jwt.sign(
+        { id: user._id, rol: user.rol }, 
+        SECRET_KEY, 
+        { expiresIn: '1h' }
+    );
+
+    return token;
+}
+
 // Exportamos la función y el array para poder testearlos
-module.exports = { registrarUsuario, loginUsuario, listarUsuarios, comprobarActivo, eliminarUsuario, confirmarCuenta };
+module.exports = { registrarUsuario, loginUsuario, listarUsuarios, comprobarActivo, eliminarUsuario, confirmarCuenta, loginConGitHub };

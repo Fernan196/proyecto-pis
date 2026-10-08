@@ -39,6 +39,25 @@ export default function Login() {
           value={password} onChange={e => setPassword(e.target.value)} 
         />
         <button type="submit">Entrar</button>
+        <button 
+          type="button" 
+          onClick={() => {
+            
+            window.location.href = 'https://github.com/login/oauth/authorize?client_id=Ov23liDWHtSU1p5HRaKo&scope=user:email';
+          }}
+          style={{ 
+          width: '100%', 
+          padding: '10px', 
+          marginTop: '10px', 
+          backgroundColor: '#24292e', 
+          color: 'white', 
+          border: 'none', 
+          borderRadius: '5px',
+          cursor: 'pointer'
+          }}
+        >
+          Entrar con GitHub
+        </button>
       </form>
     </div>
   );
