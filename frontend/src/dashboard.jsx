@@ -9,6 +9,17 @@ function Dashboard() {
     const [error, setError] = useState('');
 
     useEffect(() => {
+        // 1. Miramos si hay un token en la URL (venimos de GitHub)
+        const urlParams = new URLSearchParams(window.location.search);
+        const tokenFromUrl = urlParams.get('token');
+
+        if (tokenFromUrl) {
+            // Si hay token, lo guardamos y limpiamos la URL para que no se vea el choricillo de letras
+            localStorage.setItem('token', tokenFromUrl);
+            window.history.replaceState({}, document.title, "/dashboard");
+        }
+
+        // 2. Flujo normal: comprobamos si hay token en localStorage
         const token = localStorage.getItem('token');
         if (!token) {
             navigate('/login');

@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose'); // Importamos mongoose
 
-const { registrarUsuario, loginUsuario, listarUsuarios, comprobarActivo, eliminarUsuario, confirmarCuenta } = require('./logic/userLogic'); // Importamos la lógica
+const { registrarUsuario, loginUsuario, listarUsuarios, comprobarActivo, eliminarUsuario, confirmarCuenta, loginConGitHub } = require('./logic/userLogic'); // Importamos la lógica
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -58,6 +58,21 @@ app.get('/api/usuarios/confirmar/:token', async (req, res) => {
                 <p>${error.message}</p>
             </div>
         `);
+    }
+});
+
+// Endpoint que recibe la respuesta de GitHub
+app.get('/api/auth/github/callback', async (req, res) => {
+    const code = req.query.code; // GitHub nos pasa esto en la URL
+    
+    try {
+        const token = await loginConGitHub(code);
+        // Redirigimos al Dashboard de React y le pasamos el token
+        res.redirect(`http://localhost:5173/dashboard?token=${token}`);
+    } catch (error) {
+        console.error("Error real de OAuth:", error.message);
+        // Si algo falla, lo mandamos al login con un error
+        res.redirect(`http://localhost:5173/login?error=Fallo_OAuth`);
     }
 });
 
