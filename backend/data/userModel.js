@@ -23,10 +23,10 @@ const userSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
-    rol: { 
-        type: String, 
-        enum: ['usuario', 'administrador'],
-        default: 'usuario' 
+   rol: {
+    type: String,
+    enum: ['user', 'admin'],
+    default: 'user'
     },
     githubId: {
         type: String,
