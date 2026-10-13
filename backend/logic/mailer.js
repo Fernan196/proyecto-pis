@@ -1,7 +1,9 @@
 const nodemailer = require('nodemailer');
 
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
     auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS
@@ -10,7 +12,7 @@ const transporter = nodemailer.createTransport({
 
 async function enviarCorreoConfirmacion(email, token) {
     // Esta es la URL que el usuario clickeará para activar su cuenta
-    const urlConfirmacion = `http://localhost:3000/api/usuarios/confirmar/${token}`;
+    const urlConfirmacion = `https://proyecto-pis-814769346481.europe-southwest1.run.app/api/usuarios/confirmar/${token}`;
 
     const mailOptions = {
         from: `"Proyecto PIS" <${process.env.EMAIL_USER}>`,
