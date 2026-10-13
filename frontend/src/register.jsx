@@ -21,29 +21,16 @@ export default function Register() {
         setError('');
         setSuccessMsg('');
 
-        if (!username.trim()) {
-            return setError('El nombre de usuario es obligatorio.');
-        }
-
-        if (!EMAIL_REGEX.test(email)) {
-            return setError('Introduce un correo electrónico válido (ejemplo: usuario@dominio.com).');
-        }
-
-        if (password.length < 6) {
-            return setError('La contraseña debe tener al menos 6 caracteres.');
-        }
-
-        if (password !== confirmPassword) {
-            return setError('Las contraseñas no coinciden.');
-        }
+        if (!username.trim()) return setError('El nombre de usuario es obligatorio.');
+        if (!EMAIL_REGEX.test(email)) return setError('Introduce un correo válido.');
+        if (password.length < 6) return setError('La contraseña debe tener al menos 6 caracteres.');
+        if (password !== confirmPassword) return setError('Las contraseñas no coinciden.');
 
         setLoading(true);
         try {
             const data = await register(username.trim(), email.trim(), password);
-            setSuccessMsg(data.mensaje || '¡Registro completado! Revisa tu correo para activar la cuenta.');
-            setTimeout(() => {
-                navigate('/login');
-            }, 4500);
+            setSuccessMsg(data.mensaje || '¡Registro exitoso! Revisa tu correo.');
+            setTimeout(() => navigate('/login'), 4000);
         } catch (err) {
             setError(err.message);
         } finally {
@@ -52,146 +39,133 @@ export default function Register() {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 flex items-center justify-center p-4">
-            <div className="w-full max-w-md bg-slate-900/80 backdrop-blur-xl border border-slate-700/60 rounded-3xl shadow-2xl p-8">
-                
-                {/* Header */}
-                <div className="text-center mb-8">
-                    <div className="inline-flex items-center justify-center w-14 h-14 bg-indigo-600/20 border border-indigo-500/40 rounded-2xl mb-3 text-indigo-400">
-                        <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+        <div className="auth-wrapper">
+            <div className="auth-card">
+                <div className="auth-header">
+                    <div className="auth-icon-badge">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+                            <circle cx="8.5" cy="7" r="4" />
+                            <line x1="20" y1="8" x2="20" y2="14" />
+                            <line x1="23" y1="11" x2="17" y2="11" />
                         </svg>
                     </div>
-                    <h1 className="text-3xl font-extrabold text-white tracking-tight">Crear cuenta</h1>
-                    <p className="text-slate-400 text-sm mt-1">Únete a la plataforma en pocos segundos</p>
+                    <h1>Crear cuenta</h1>
+                    <p>Únete a la plataforma en pocos segundos</p>
                 </div>
 
-                {/* Notificaciones */}
                 {error && (
-                    <div className="mb-5 p-3.5 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm flex items-center gap-2">
-                        <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    <div className="alert alert-error">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <circle cx="12" cy="12" r="10" />
+                            <line x1="12" y1="8" x2="12" y2="12" />
+                            <line x1="12" y1="16" x2="12.01" y2="16" />
                         </svg>
                         <span>{error}</span>
                     </div>
                 )}
 
                 {successMsg && (
-                    <div className="mb-5 p-4 bg-emerald-500/15 border border-emerald-500/30 rounded-xl text-emerald-300 text-sm flex flex-col gap-1">
-                        <div className="flex items-center gap-2 font-semibold">
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <span>¡Registro exitoso!</span>
-                        </div>
-                        <p className="text-xs text-emerald-200/80">{successMsg}</p>
-                        <span className="text-[11px] text-emerald-400 mt-1">Redirigiendo al login...</span>
+                    <div className="alert alert-success">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M20 6L9 17l-5-5" />
+                        </svg>
+                        <span>{successMsg}</span>
                     </div>
                 )}
 
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    {/* Username */}
-                    <div>
-                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">Nombre de usuario</label>
+                <form onSubmit={handleSubmit}>
+                    <div className="form-group">
+                        <label className="form-label">Nombre de usuario</label>
                         <input
                             type="text"
                             required
                             placeholder="fernando_gn"
                             value={username}
                             onChange={(e) => setUsername(e.target.value)}
-                            className="w-full bg-slate-800/80 border border-slate-700 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm transition"
+                            className="form-input"
                         />
                     </div>
 
-                    {/* Email */}
-                    <div>
-                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">Correo electrónico</label>
+                    <div className="form-group">
+                        <label className="form-label">Correo electrónico</label>
                         <input
                             type="email"
                             required
                             placeholder="ejemplo@correo.com"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
-                            className="w-full bg-slate-800/80 border border-slate-700 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm transition"
+                            className="form-input"
                         />
                     </div>
 
-                    {/* Password */}
-                    <div>
-                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">Contraseña</label>
-                        <div className="relative">
+                    <div className="form-group">
+                        <label className="form-label">Contraseña</label>
+                        <div className="input-container">
                             <input
                                 type={showPassword ? 'text' : 'password'}
                                 required
                                 placeholder="••••••••"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                className="w-full bg-slate-800/80 border border-slate-700 rounded-xl px-4 py-2.5 pr-11 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm transition"
+                                className="form-input"
                             />
                             <button
                                 type="button"
                                 onClick={() => setShowPassword(!showPassword)}
-                                className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-200 transition"
+                                className="toggle-password-btn"
                             >
-                                {showPassword ? (
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />
-                                    </svg>
-                                ) : (
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                    </svg>
-                                )}
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    {showPassword ? (
+                                        <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24M1 1l22 22" />
+                                    ) : (
+                                        <>
+                                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                                            <circle cx="12" cy="12" r="3" />
+                                        </>
+                                    )}
+                                </svg>
                             </button>
                         </div>
                     </div>
 
-                    {/* Confirm Password */}
-                    <div>
-                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">Confirmar contraseña</label>
-                        <div className="relative">
+                    <div className="form-group">
+                        <label className="form-label">Confirmar contraseña</label>
+                        <div className="input-container">
                             <input
                                 type={showConfirmPassword ? 'text' : 'password'}
                                 required
                                 placeholder="••••••••"
                                 value={confirmPassword}
                                 onChange={(e) => setConfirmPassword(e.target.value)}
-                                className="w-full bg-slate-800/80 border border-slate-700 rounded-xl px-4 py-2.5 pr-11 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm transition"
+                                className="form-input"
                             />
                             <button
                                 type="button"
                                 onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                                className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-200 transition"
+                                className="toggle-password-btn"
                             >
-                                {showConfirmPassword ? (
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />
-                                    </svg>
-                                ) : (
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                    </svg>
-                                )}
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    {showConfirmPassword ? (
+                                        <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24M1 1l22 22" />
+                                    ) : (
+                                        <>
+                                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                                            <circle cx="12" cy="12" r="3" />
+                                        </>
+                                    )}
+                                </svg>
                             </button>
                         </div>
                     </div>
 
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        className="w-full mt-2 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl shadow-lg shadow-indigo-600/30 transition transform active:scale-[0.98] disabled:opacity-50"
-                    >
+                    <button type="submit" disabled={loading} className="btn-primary">
                         {loading ? 'Procesando registro...' : 'Registrarse'}
                     </button>
                 </form>
 
-                <p className="text-center text-sm text-slate-400 mt-6">
-                    ¿Ya tienes cuenta?{' '}
-                    <Link to="/login" className="text-indigo-400 font-semibold hover:underline">
-                        Inicia sesión aquí
-                    </Link>
+                <p className="auth-footer">
+                    ¿Ya tienes cuenta? <Link to="/login">Inicia sesión aquí</Link>
                 </p>
             </div>
         </div>

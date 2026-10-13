@@ -1,17 +1,27 @@
-// backend/logic/userLogic.js
-
+const User = require('../data/userModel');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-
-const User = require('../data/userModel'); // Importamos la Capa de Datos
-const SECRET_KEY = process.env.JWT_SECRET || 'clave_secreta_para_los_tests';
-
 const { enviarCorreoConfirmacion } = require('./mailer');
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-async function registrarUsuario({ username, email, password, rol = 'user' }) {
-    if (!username || !email || !password) {
+// 1. REGISTRAR USUARIO
+async function registrarUsuario(params, legacyPassword, legacyRol) {
+    let email, password, username, rol;
+
+    if (typeof params === 'string') {
+        email = params;
+        password = legacyPassword;
+        rol = legacyRol || 'user';
+        username = email ? email.split('@')[0] : 'usuario';
+    } else {
+        email = params.email;
+        password = params.password;
+        username = params.username || (email ? email.split('@')[0] : 'usuario');
+        rol = params.rol || 'user';
+    }
+
+    if (!email || !password) {
         throw new Error('Todos los campos son obligatorios');
     }
 
@@ -22,41 +32,41 @@ async function registrarUsuario({ username, email, password, rol = 'user' }) {
     if (password.length < 6) {
         throw new Error('La contraseña debe tener al menos 6 caracteres');
     }
-    // Consultamos a la BD si el email ya existe
-    const usuarioExistente = await User.findOne({ email });
-    if (usuarioExistente) throw new Error("El usuario ya existe");
-    
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Mongoose crea el registro en la base de datos
-    const newUser = await User.create({
+    const usuarioExistente = await User.findOne({ email });
+    if (usuarioExistente) {
+        throw new Error('El correo electrónico ya está registrado');
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(password, salt);
+
+    const nuevoUsuario = new User({
         username,
         email,
-        password: hashedPassword, // En el Hito 2 (Sesiones) aplicaremos el hash bcrypt
-        confirmado: false, // Según el apartado 4.1
-        rol
+        password: passwordHash,
+        rol,
+        confirmado: false
     });
-   
-    // Generamos un token temporal válido por 1 hora
-    const tokenConfirmacion = jwt.sign({ id: newUser._id }, SECRET_KEY, { expiresIn: '1h' });
 
-    // Si no estamos ejecutando los tests, enviamos el correo
-    if (process.env.NODE_ENV !== 'test') {
-        try {
-            await enviarCorreoConfirmacion(email, tokenConfirmacion);
-        } catch (error) {
-            console.error("Error al enviar el email:", error.message);
-        }
-    }
-   
+    const usuarioGuardado = await nuevoUsuario.save();
+
+    const tokenConfirmacion = jwt.sign(
+        { id: usuarioGuardado._id },
+        process.env.JWT_SECRET,
+        { expiresIn: '1h' }
+    );
+
+    await enviarCorreoConfirmacion(usuarioGuardado.email, tokenConfirmacion);
+
     return {
         mensaje: 'Usuario registrado. Por favor, revisa tu correo para activar tu cuenta.',
-        userId: newUser._id
+        userId: usuarioGuardado._id
     };
 }
 
-async function loginUsuario({email, password}) {
+// 2. LOGIN USUARIO LOCAL
+async function loginUsuario({ email, password }) {
     if (!email || !password) {
         throw new Error('Email y contraseña requeridos');
     }
@@ -66,127 +76,169 @@ async function loginUsuario({email, password}) {
         throw new Error('Credenciales incorrectas');
     }
 
-    // BLOQUEO: Comprobar si la cuenta está activada
     if (!usuario.confirmado) {
         const error = new Error('Debes confirmar tu cuenta por correo electrónico antes de poder iniciar sesión.');
         error.code = 'ACCOUNT_NOT_CONFIRMED';
         throw error;
     }
 
-    // Comparamos el texto plano con el hash guardado
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) throw new Error("Credenciales inválidas");
+    const passwordValida = await bcrypt.compare(password, usuario.password);
+    if (!passwordValida) {
+        throw new Error('Credenciales incorrectas');
+    }
 
-    // Generamos el token de sesión (JWT)
     const token = jwt.sign(
-        { id: usuario._id, email: usuario.email, rol: usuario.rol, confirmado: usuario.confirmado },
-        SECRET_KEY,
-        { expiresIn: '2h' }
+        { 
+            id: usuario._id, 
+            email: usuario.email, 
+            username: usuario.username, 
+            rol: usuario.rol 
+        },
+        process.env.JWT_SECRET,
+        { expiresIn: '8h' }
     );
-    return { token,  user: { id: usuario._id, email: usuario.email, rol: usuario.rol } };
+
+    return {
+        token,
+        user: {
+            id: usuario._id,
+            username: usuario.username,
+            email: usuario.email,
+            rol: usuario.rol
+        }
+    };
 }
 
-async function listarUsuarios() {
-    // El apartado 4.2 dice que el listado no debe incluir contraseñas
-    return await User.find({}); // Devuelve todos los usuarios
-}
-
-async function comprobarActivo(id) {
-    const user = await User.findById(id);
-    if (!user) throw new Error("Usuario no encontrado");
-    // Según el apartado 4.2: está activo si su estado es 'activo' y no está eliminado
-    return user.confirmado === true;
-}
-
-async function eliminarUsuario(id) {
-    const user = await User.findByIdAndDelete(id);
-    if (!user) throw new Error("Usuario no encontrado");
-    return true;
-}
-
+// 3. CONFIRMAR CUENTA
 async function confirmarCuenta(token) {
     try {
-        // Verificamos que el token sea válido y no haya caducado
-        const decoded = jwt.verify(token, SECRET_KEY);
-        const user = await User.findById(decoded.id);
-        
-        if (!user) throw new Error("Usuario no encontrado");
-        if (user.confirmado === true) return true; // Si ya estaba activo, no hacemos nada
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const usuario = await User.findById(decoded.id);
 
-        // Cambiamos el estado a activo y guardamos
-        user.confirmado = true;
-        await user.save();
-        return true;
-    } catch (error) {
-        throw new Error("El enlace de confirmación es inválido o ha expirado.");
+        if (!usuario) {
+            throw new Error('Usuario no encontrado');
+        }
+
+        if (usuario.confirmado) {
+            return { yaConfirmado: true };
+        }
+
+        usuario.confirmado = true;
+        await usuario.save();
+
+        return { yaConfirmado: false };
+    } catch (err) {
+        throw new Error('Enlace de activación inválido o expirado');
     }
 }
+
+// 4. LISTAR USUARIOS (Solo admin)
+async function listarUsuarios() {
+    return await User.find().select('-password');
+}
+
+// 5. COMPROBAR SI UN USUARIO ESTÁ ACTIVO
+async function comprobarActivo(id) {
+    const usuario = await User.findById(id);
+    if (!usuario) {
+        throw new Error('Usuario no encontrado');
+    }
+    // Según apartado 4.2: activo si está confirmado y no eliminado
+    return {
+        id: usuario._id,
+        email: usuario.email,
+        activo: Boolean(usuario.confirmado)
+    };
+}
+
+// 6. ELIMINAR USUARIO (Aplica reglas de seguridad del apartado 4.2)
+async function eliminarUsuario({ solicitanteId, solicitanteRol, objetivoId }) {
+    if (solicitanteRol !== 'admin' && solicitanteId.toString() !== objetivoId.toString()) {
+        const error = new Error('No tienes permiso para eliminar esta cuenta');
+        error.statusCode = 403;
+        throw error;
+    }
+
+    const usuarioEliminado = await User.findByIdAndDelete(objetivoId);
+    if (!usuarioEliminado) {
+        const error = new Error('Usuario no encontrado');
+        error.statusCode = 404;
+        throw error;
+    }
+
+    return { mensaje: 'Cuenta eliminada exitosamente' };
+}
+
+// 7. LOGIN / REGISTRO MEDIANTE GITHUB OAUTH
+async function procesarLoginGitHub({ githubId, email, username }) {
+    if (!email) {
+        throw new Error('El perfil de GitHub no proporciona un correo electrónico');
+    }
+
+    let usuario = await User.findOne({ email });
+
+    if (!usuario) {
+        usuario = new User({
+            username: username || 'Usuario GitHub',
+            email,
+            githubId: githubId.toString(),
+            rol: 'user',
+            confirmado: true // Según apartado 4.2: OAuth activa directamente la cuenta
+        });
+        await usuario.save();
+    } else if (!usuario.confirmado) {
+        usuario.confirmado = true;
+        if (!usuario.githubId) usuario.githubId = githubId.toString();
+        await usuario.save();
+    }
+
+    const token = jwt.sign(
+        { 
+            id: usuario._id, 
+            email: usuario.email, 
+            username: usuario.username, 
+            rol: usuario.rol 
+        },
+        process.env.JWT_SECRET,
+        { expiresIn: '8h' }
+    );
+
+    return {
+        token,
+        user: {
+            id: usuario._id,
+            username: usuario.username,
+            email: usuario.email,
+            rol: usuario.rol
+        }
+    };
+}
+
+// 8. CAMBIAR ROL DE USUARIO
 async function cambiarRolUsuario(id, nuevoRol) {
     if (!['user', 'admin'].includes(nuevoRol)) {
         throw new Error('Rol no válido');
     }
-    const usuario = await User.findByIdAndUpdate(id, { rol: nuevoRol }, { new: true }).select('-password');
-    if (!usuario) throw new Error('Usuario no encontrado');
+    const usuario = await User.findByIdAndUpdate(
+        id, 
+        { rol: nuevoRol }, 
+        { new: true }
+    ).select('-password');
+
+    if (!usuario) {
+        throw new Error('Usuario no encontrado');
+    }
+
     return usuario;
 }
 
-async function loginConGitHub(code) {
-    // 1. Intercambiamos el 'code' por un token de acceso de GitHub
-    const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json' // Pedimos que nos responda en JSON
-        },
-        body: JSON.stringify({
-            client_id: process.env.GITHUB_CLIENT_ID,
-            client_secret: process.env.GITHUB_CLIENT_SECRET,
-            code: code
-        })
-    });
-    const tokenData = await tokenResponse.json();
-    if (tokenData.error) {
-    console.error("Motivo del rechazo de GitHub:", tokenData);
-    throw new Error("Error al autenticar con GitHub");
-}
-
-    // 2. Usamos el token de GitHub para pedir el email del usuario
-    const userResponse = await fetch('https://api.github.com/user/emails', {
-        headers: { 'Authorization': `Bearer ${tokenData.access_token}`,
-                    'User-Agent': 'Proyecto PIS'
-                }
-    });
-    const emails = await userResponse.json();
-    
-    // Buscamos el email principal de su cuenta
-    const emailPrincipal = emails.find(e => e.primary).email;
-
-    // 3. Buscamos al usuario en nuestra BBDD
-    let user = await User.findOne({ email: emailPrincipal });
-    
-    if (!user) {
-        // Si no existe, lo registramos automáticamente como activo
-        user = await User.create({
-            email: emailPrincipal,
-            password: 'OAUTH_GITHUB_USER', // Contraseña inútil por diseño
-            confirmado: true,
-            rol: 'usuario'
-        });
-    } else if (user.confirmado !== true) {
-        // Si existía pero estaba pendiente, lo activamos
-        user.confirmado = true;
-        await user.save();
-    }
-
-    // 4. Generamos nuestro token JWT normal para que el frontend lo entienda
-    const token = jwt.sign(
-        { id: user._id, rol: user.rol }, 
-        SECRET_KEY, 
-        { expiresIn: '1h' }
-    );
-
-    return token;
-}
-
-// Exportamos la función y el array para poder testearlos
-module.exports = { registrarUsuario, loginUsuario, listarUsuarios, comprobarActivo, eliminarUsuario, confirmarCuenta, loginConGitHub, cambiarRolUsuario };
+module.exports = {
+    registrarUsuario,
+    loginUsuario,
+    confirmarCuenta,
+    listarUsuarios,
+    comprobarActivo,
+    eliminarUsuario,
+    procesarLoginGitHub,
+    cambiarRolUsuario
+};
