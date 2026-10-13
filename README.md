@@ -86,13 +86,3 @@ El proyecto no almacena ningún secreto en el repositorio. Para ejecutar el ento
 
 ---
 
-## 5. Ejecución en Local
-
-### Prerrequisitos
-- Node.js v18 o superior instalado.
-- Git.
-
-### 1. Clonar el repositorio
-```bash
-git clone [https://github.com/Fernan196/proyecto-pis.git](https://github.com/Fernan196/proyecto-pis.git)
-cd proyecto-pis
