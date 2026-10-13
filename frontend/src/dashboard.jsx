@@ -40,25 +40,34 @@ export default function Dashboard() {
     };
 
     const handleToggleRol = async (id, rolActual) => {
+        if (!id) {
+            alert('Error: ID de usuario no encontrado');
+            return;
+        }
         const token = localStorage.getItem('token');
         const nuevoRol = rolActual === 'admin' ? 'user' : 'admin';
         try {
             await cambiarRol(id, nuevoRol, token);
-            setUsuarios(usuarios.map(u => u._id === id ? { ...u, rol: nuevoRol } : u));
+            setUsuarios(usuarios.map(u => (u._id === id || u.id === id) ? { ...u, rol: nuevoRol } : u));
         } catch (err) {
             alert(err.message);
         }
     };
 
     const handleEliminar = async (id) => {
+        if (!id) {
+            alert('Error: ID de usuario no encontrado');
+            return;
+        }
         if (!window.confirm('¿Seguro que deseas eliminar este usuario?')) return;
         const token = localStorage.getItem('token');
         try {
             await eliminarUsuario(id, token);
-            if (id === user.id) {
+            const currentUserId = user?.id || user?._id;
+            if (id === currentUserId) {
                 handleLogout();
             } else {
-                setUsuarios(usuarios.filter(u => u._id !== id));
+                setUsuarios(usuarios.filter(u => (u._id !== id && u.id !== id)));
             }
         } catch (err) {
             alert(err.message);
@@ -70,6 +79,8 @@ export default function Dashboard() {
         localStorage.removeItem('user');
         navigate('/login');
     };
+
+    const currentUserId = user?.id || user?._id;
 
     return (
         <div>
@@ -126,7 +137,7 @@ export default function Dashboard() {
                     {user?.rol !== 'admin' && (
                         <div style={{ marginTop: '1.5rem' }}>
                             <button
-                                onClick={() => handleEliminar(user.id)}
+                                onClick={() => handleEliminar(currentUserId)}
                                 className="btn-action btn-delete"
                                 style={{ padding: '0.5rem 1rem' }}
                             >
@@ -162,38 +173,47 @@ export default function Dashboard() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {usuarios.map((u) => (
-                                            <tr key={u._id}>
-                                                <td style={{ fontWeight: 600 }}>{u.username || 'Sin nombre'}</td>
-                                                <td style={{ color: '#cbd5e1' }}>{u.email}</td>
-                                                <td>
-                                                    <span className={`status-badge ${u.confirmado ? 'status-active' : 'status-pending'}`}>
-                                                        {u.confirmado ? '● Activo' : '● Pendiente'}
-                                                    </span>
-                                                </td>
-                                                <td>
-                                                    <span className={`role-badge ${u.rol === 'admin' ? 'role-admin' : 'role-user'}`}>
-                                                        {u.rol}
-                                                    </span>
-                                                </td>
-                                                <td style={{ textAlign: 'right', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                                                    <button
-                                                        onClick={() => handleToggleRol(u._id, u.rol)}
-                                                        disabled={u._id === user?.id}
-                                                        className="btn-action btn-role"
-                                                    >
-                                                        {u.rol === 'admin' ? 'Hacer Usuario' : 'Promover a Admin'}
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleEliminar(u._id)}
-                                                        disabled={u._id === user?.id}
-                                                        className="btn-action btn-delete"
-                                                    >
-                                                        Eliminar
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        {usuarios.map((u) => {
+                                            const uid = u._id || u.id;
+                                            const esMismoUsuario = uid === currentUserId;
+
+                                            return (
+                                                <tr key={uid}>
+                                                    <td style={{ fontWeight: 600 }}>{u.username || 'Sin nombre'}</td>
+                                                    <td style={{ color: '#cbd5e1' }}>{u.email}</td>
+                                                    <td>
+                                                        <span className={`status-badge ${u.confirmado ? 'status-active' : 'status-pending'}`}>
+                                                            {u.confirmado ? '● Activo' : '● Pendiente'}
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <span className={`role-badge ${u.rol === 'admin' ? 'role-admin' : 'role-user'}`}>
+                                                            {u.rol}
+                                                        </span>
+                                                    </td>
+                                                    <td style={{ textAlign: 'right', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                                                        <button
+                                                            onClick={() => handleToggleRol(uid, u.rol)}
+                                                            disabled={esMismoUsuario}
+                                                            title={esMismoUsuario ? 'No puedes cambiar tu propio rol' : ''}
+                                                            className="btn-action btn-role"
+                                                            style={esMismoUsuario ? { opacity: 0.3, cursor: 'not-allowed' } : {}}
+                                                        >
+                                                            {u.rol === 'admin' ? 'Hacer Usuario' : 'Promover a Admin'}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleEliminar(uid)}
+                                                            disabled={esMismoUsuario}
+                                                            title={esMismoUsuario ? 'Usa la opción de perfil para autoeliminarte' : ''}
+                                                            className="btn-action btn-delete"
+                                                            style={esMismoUsuario ? { opacity: 0.3, cursor: 'not-allowed' } : {}}
+                                                        >
+                                                            Eliminar
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             </div>

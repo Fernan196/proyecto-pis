@@ -1,11 +1,11 @@
 const User = require('../data/userModel');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const { enviarCorreoConfirmacion } = require('./mailer');
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// 1. REGISTRAR USUARIO
 async function registrarUsuario(params, legacyPassword, legacyRol) {
     let email, password, username, rol;
 
@@ -65,7 +65,6 @@ async function registrarUsuario(params, legacyPassword, legacyRol) {
     };
 }
 
-// 2. LOGIN USUARIO LOCAL
 async function loginUsuario({ email, password }) {
     if (!email || !password) {
         throw new Error('Email y contraseña requeridos');
@@ -109,41 +108,32 @@ async function loginUsuario({ email, password }) {
     };
 }
 
-// 3. CONFIRMAR CUENTA
 async function confirmarCuenta(token) {
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         const usuario = await User.findById(decoded.id);
 
-        if (!usuario) {
-            throw new Error('Usuario no encontrado');
-        }
-
-        if (usuario.confirmado) {
-            return { yaConfirmado: true };
-        }
+        if (!usuario) throw new Error('Usuario no encontrado');
+        if (usuario.confirmado) return { yaConfirmado: true };
 
         usuario.confirmado = true;
         await usuario.save();
-
         return { yaConfirmado: false };
     } catch (err) {
         throw new Error('Enlace de activación inválido o expirado');
     }
 }
 
-// 4. LISTAR USUARIOS (Solo admin)
 async function listarUsuarios() {
     return await User.find().select('-password');
 }
 
-// 5. COMPROBAR SI UN USUARIO ESTÁ ACTIVO
 async function comprobarActivo(id) {
-    const usuario = await User.findById(id);
-    if (!usuario) {
-        throw new Error('Usuario no encontrado');
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+        throw new Error('ID de usuario no válido');
     }
-    // Según apartado 4.2: activo si está confirmado y no eliminado
+    const usuario = await User.findById(id);
+    if (!usuario) throw new Error('Usuario no encontrado');
     return {
         id: usuario._id,
         email: usuario.email,
@@ -151,25 +141,72 @@ async function comprobarActivo(id) {
     };
 }
 
-// 6. ELIMINAR USUARIO (Aplica reglas de seguridad del apartado 4.2)
+// CAMBIAR ROL: Protege contra la degradación del último administrador
+async function cambiarRolUsuario(id, nuevoRol) {
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+        throw new Error('ID de usuario no válido');
+    }
+
+    if (!['user', 'admin'].includes(nuevoRol)) {
+        throw new Error('Rol no válido');
+    }
+
+    const usuario = await User.findById(id);
+    if (!usuario) {
+        throw new Error('Usuario no encontrado');
+    }
+
+    // Regla de integridad: no degradar al último administrador
+    if (usuario.rol === 'admin' && nuevoRol === 'user') {
+        const totalAdmins = await User.countDocuments({ rol: 'admin' });
+        if (totalAdmins <= 1) {
+            throw new Error('Operación cancelada: no puedes quitar privilegios al único administrador del sistema.');
+        }
+    }
+
+    usuario.rol = nuevoRol;
+    await usuario.save();
+
+    const resultado = usuario.toObject();
+    delete resultado.password;
+    return resultado;
+}
+
+// ELIMINAR USUARIO: Protege contra la eliminación del último administrador
 async function eliminarUsuario({ solicitanteId, solicitanteRol, objetivoId }) {
+    if (!objetivoId || !mongoose.Types.ObjectId.isValid(objetivoId)) {
+        const error = new Error('ID de usuario no válido');
+        error.statusCode = 400;
+        throw error;
+    }
+
     if (solicitanteRol !== 'admin' && solicitanteId.toString() !== objetivoId.toString()) {
         const error = new Error('No tienes permiso para eliminar esta cuenta');
         error.statusCode = 403;
         throw error;
     }
 
-    const usuarioEliminado = await User.findByIdAndDelete(objetivoId);
-    if (!usuarioEliminado) {
+    const usuarioAEliminar = await User.findById(objetivoId);
+    if (!usuarioAEliminar) {
         const error = new Error('Usuario no encontrado');
         error.statusCode = 404;
         throw error;
     }
 
+    // Regla de integridad: no borrar al último administrador
+    if (usuarioAEliminar.rol === 'admin') {
+        const totalAdmins = await User.countDocuments({ rol: 'admin' });
+        if (totalAdmins <= 1) {
+            const error = new Error('Operación cancelada: no es posible eliminar al único administrador del sistema.');
+            error.statusCode = 400;
+            throw error;
+        }
+    }
+
+    await User.findByIdAndDelete(objetivoId);
     return { mensaje: 'Cuenta eliminada exitosamente' };
 }
 
-// 7. LOGIN / REGISTRO MEDIANTE GITHUB OAUTH
 async function procesarLoginGitHub({ githubId, email, username }) {
     if (!email) {
         throw new Error('El perfil de GitHub no proporciona un correo electrónico');
@@ -183,7 +220,7 @@ async function procesarLoginGitHub({ githubId, email, username }) {
             email,
             githubId: githubId.toString(),
             rol: 'user',
-            confirmado: true // Según apartado 4.2: OAuth activa directamente la cuenta
+            confirmado: true
         });
         await usuario.save();
     } else if (!usuario.confirmado) {
@@ -212,24 +249,6 @@ async function procesarLoginGitHub({ githubId, email, username }) {
             rol: usuario.rol
         }
     };
-}
-
-// 8. CAMBIAR ROL DE USUARIO
-async function cambiarRolUsuario(id, nuevoRol) {
-    if (!['user', 'admin'].includes(nuevoRol)) {
-        throw new Error('Rol no válido');
-    }
-    const usuario = await User.findByIdAndUpdate(
-        id, 
-        { rol: nuevoRol }, 
-        { new: true }
-    ).select('-password');
-
-    if (!usuario) {
-        throw new Error('Usuario no encontrado');
-    }
-
-    return usuario;
 }
 
 module.exports = {
