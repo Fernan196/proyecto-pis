@@ -64,15 +64,16 @@ app.get('/api/usuarios/confirmar/:token', async (req, res) => {
 // Endpoint que recibe la respuesta de GitHub
 app.get('/api/auth/github/callback', async (req, res) => {
     const code = req.query.code; // GitHub nos pasa esto en la URL
+    const URL_FRONTEND = process.env.FRONTEND_URL || 'http://localhost:5173';
     
     try {
         const token = await loginConGitHub(code);
         // Redirigimos al Dashboard de React y le pasamos el token
-        res.redirect(`http://localhost:5173/dashboard?token=${token}`);
+        res.redirect(`${URL_FRONTEND}/dashboard?token=${token}`);
     } catch (error) {
         console.error("Error real de OAuth:", error.message);
         // Si algo falla, lo mandamos al login con un error
-        res.redirect(`http://localhost:5173/login?error=Fallo_OAuth`);
+        res.redirect(`${URL_FRONTEND}/login?error=Fallo_OAuth`);
     }
 });
 

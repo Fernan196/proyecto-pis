@@ -1,5 +1,5 @@
 // frontend/src/services/api.js
-const API_URL = 'http://localhost:3000/api';
+const API_URL = 'https://proyecto-pis-backend.onrender.com/api';
 
 export async function login(email, password) {
     const response = await fetch(`${API_URL}/login`, {
@@ -24,7 +24,7 @@ export async function register(email, password) {
 }
 
 export const obtenerUsuarios = async (token) => {
-    const response = await fetch('http://localhost:3000/api/usuarios', {
+    const response = await fetch('https://proyecto-pis-backend.onrender.com/api/usuarios', {
         method: 'GET',
         headers: {
             'Authorization': `Bearer ${token}`
@@ -35,7 +35,7 @@ export const obtenerUsuarios = async (token) => {
 };
 
 export const eliminarUsuario = async (id, token) => {
-    const response = await fetch(`http://localhost:3000/api/usuarios/${id}`, {
+    const response = await fetch(`https://proyecto-pis-backend.onrender.com/api/usuarios/${id}`, {
         method: 'DELETE',
         headers: {
             'Authorization': `Bearer ${token}`
