@@ -107,7 +107,10 @@ async function loginConGitHub(code) {
         })
     });
     const tokenData = await tokenResponse.json();
-    if (tokenData.error) throw new Error("Error al autenticar con GitHub");
+    if (tokenData.error) {
+    console.error("Motivo del rechazo de GitHub:", tokenData);
+    throw new Error("Error al autenticar con GitHub");
+}
 
     // 2. Usamos el token de GitHub para pedir el email del usuario
     const userResponse = await fetch('https://api.github.com/user/emails', {
