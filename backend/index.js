@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose'); // Importamos mongoose
 
-const { registrarUsuario, loginUsuario, listarUsuarios, comprobarActivo, eliminarUsuario, confirmarCuenta, loginConGitHub } = require('./logic/userLogic'); // Importamos la lógica
+const { registrarUsuario, loginUsuario, listarUsuarios, comprobarActivo, eliminarUsuario, confirmarCuenta, loginConGitHub, cambiarRolUsuario } = require('./logic/userLogic'); // Importamos la lógica
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -12,7 +12,7 @@ const verificarAdmin = require('./logic/adminMiddleware');
 
 // Conexión a la base de datos
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('Conectado a MongoDB local'))
+  .then(() => console.log('Conectado a MongoDB Atlas'))
   .catch(err => console.error('Error conectando a MongoDB:', err));
 
 app.use(cors()); // Permite peticiones desde el frontend (puerto 5173)
@@ -28,12 +28,8 @@ app.get('/api/health', (req, res) => {
 // Capa de Presentación del servidor
 app.post('/api/usuarios', async(req, res) => {
   try {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: "Email y contraseña obligatorios" });
-    }
-    const nuevoUsuario = registrarUsuario(email, password);
-    res.status(201).json(nuevoUsuario);
+    const resultado = await registrarUsuario(req.body);
+    res.status(201).json(resultado);
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -42,49 +38,119 @@ app.post('/api/usuarios', async(req, res) => {
 // Endpoint para confirmar el correo desde el enlace
 app.get('/api/usuarios/confirmar/:token', async (req, res) => {
     try {
-        await confirmarCuenta(req.params.token);
-        // Si va bien, mostramos un mensaje de éxito HTML
-        res.send(`
-            <div style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-                <h1 style="color: #4CAF50;">¡Cuenta activada con éxito! 🎉</h1>
-                <p>Tu correo ha sido verificado. Ya puedes volver a la aplicación e iniciar sesión.</p>
-            </div>
-        `);
+      await confirmarCuenta(req.params.token);
+      // Redirige al frontend con query param de éxito
+      return res.redirect(`${FRONTEND_URL}/login?confirmed=true`);
     } catch (error) {
-        // Si el token es falso o caducado, mostramos error
-        res.status(400).send(`
-            <div style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-                <h1 style="color: #f44336;">Error al activar la cuenta</h1>
-                <p>${error.message}</p>
-            </div>
-        `);
+      return res.redirect(`${FRONTEND_URL}/login?error=token_invalido`);
     }
+});
+
+app.get('/api/auth/github', (req, res) => {
+    const redirectUri = `https://github.com/login/oauth/authorize?client_id=${process.env.GITHUB_CLIENT_ID}&scope=user:email`;
+    res.redirect(redirectUri);
 });
 
 // Endpoint que recibe la respuesta de GitHub
 app.get('/api/auth/github/callback', async (req, res) => {
-    const code = req.query.code; // GitHub nos pasa esto en la URL
-    const URL_FRONTEND = process.env.FRONTEND_URL || 'http://localhost:5173';
-    
+    const { code } = req.query;
+    if (!code) return res.redirect(`${FRONTEND_URL}/login?error=oauth_fallido`);
+
     try {
-        const token = await loginConGitHub(code);
-        // Redirigimos al Dashboard de React y le pasamos el token
-        res.redirect(`${URL_FRONTEND}/dashboard?token=${token}`);
-    } catch (error) {
-        console.error("Error real de OAuth:", error.message);
-        // Si algo falla, lo mandamos al login con un error
-        res.redirect(`${URL_FRONTEND}/login?error=Fallo_OAuth`);
+        // 1. Obtener token de acceso de GitHub
+        const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+                client_id: process.env.GITHUB_CLIENT_ID,
+                client_secret: process.env.GITHUB_CLIENT_SECRET,
+                code
+            })
+        });
+        const tokenData = await tokenRes.json();
+        const accessToken = tokenData.access_token;
+        if (!accessToken) throw new Error('No access token de GitHub');
+
+        // 2. Obtener datos de usuario de GitHub
+        const userRes = await fetch('https://api.github.com/user', {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        const ghUser = await userRes.json();
+
+        // 3. Obtener correo principal de GitHub
+        let email = ghUser.email;
+        if (!email) {
+            const emailsRes = await fetch('https://api.github.com/user/emails', {
+                headers: { Authorization: `Bearer ${accessToken}` }
+            });
+            const emails = await emailsRes.json();
+            const primary = emails.find(e => e.primary && e.verified);
+            email = primary ? primary.email : (emails[0] ? emails[0].email : null);
+        }
+
+        if (!email) {
+            return res.redirect(`${FRONTEND_URL}/login?error=sin_email_en_github`);
+        }
+
+        // 4. Buscar o crear el usuario
+        let usuario = await User.findOne({ email });
+
+        if (!usuario) {
+            // Se crea pero NO confirmado
+            usuario = new User({
+                username: ghUser.login || ghUser.name || 'Usuario GitHub',
+                email,
+                githubId: ghUser.id.toString(),
+                rol: 'user',
+                confirmado: false
+            });
+            await usuario.save();
+
+            // Enviar email de activación
+            const confirmToken = jwt.sign({ id: usuario._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+            await enviarCorreoConfirmacion(usuario.email, confirmToken);
+
+            return res.redirect(`${FRONTEND_URL}/login?github_pending=true&email=${encodeURIComponent(email)}`);
+        }
+
+        // Si ya existía pero aún no ha confirmado el correo:
+        if (!usuario.confirmado) {
+            const confirmToken = jwt.sign({ id: usuario._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+            await enviarCorreoConfirmacion(usuario.email, confirmToken);
+            return res.redirect(`${FRONTEND_URL}/login?github_pending=true&email=${encodeURIComponent(email)}`);
+        }
+
+        // Si ya está confirmado, se genera sesión y se entra al dashboard
+        const sessionToken = jwt.sign(
+            { id: usuario._id, email: usuario.email, username: usuario.username, rol: usuario.rol },
+            process.env.JWT_SECRET,
+            { expiresIn: '8h' }
+        );
+
+        return res.redirect(`${FRONTEND_URL}/login?oauth_token=${sessionToken}&user=${encodeURIComponent(JSON.stringify({
+            id: usuario._id,
+            username: usuario.username,
+            email: usuario.email,
+            rol: usuario.rol
+        }))}`);
+
+    } catch (err) {
+        console.error('Error OAuth:', err);
+        return res.redirect(`${FRONTEND_URL}/login?error=oauth_error`);
     }
 });
 
 //Login
 app.post('/api/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
-    const result = await loginUsuario(email, password);
-    res.json(result);
+    const data = await loginUsuario(req.body);
+    res.json(data);
   } catch (error) {
-    res.status(401).json({ error: error.message });
+    const status = error.code === 'ACCOUNT_NOT_CONFIRMED' ? 403 : 401;
+    res.status(status).json({ error: error.message, code: error.code });
   }
 });
 
@@ -121,6 +187,17 @@ app.delete('/api/usuarios/:id', verificarToken, verificarAdmin, async (req, res)
   } catch (error) {
     res.status(404).json({ error: error.message });
   }
+});
+
+// Cambiar rol de usuario (solo admin)
+app.patch('/api/usuarios/:id/rol', authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+        const { nuevoRol } = req.body;
+        const usuarioActualizado = await cambiarRolUsuario(req.params.id, nuevoRol);
+        res.json({ mensaje: 'Rol actualizado con éxito', usuario: usuarioActualizado });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
 });
 
 app.listen(port, () => {

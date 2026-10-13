@@ -3,24 +3,34 @@ const mongoose = require('mongoose');
 
 // Definimos la estructura de la tabla/colección (Esquema)
 const userSchema = new mongoose.Schema({
+    username: {
+        type: String,
+        required: true,
+        trim: true
+    },
     email: { 
         type: String, 
         required: true, 
-        unique: true // Asegura que no haya dos correos iguales
+        unique: true, // Asegura que no haya dos correos iguales
+        trim: true,
+        lowercase: true
     },
     password: { 
         type: String, 
-        required: true 
+        required: false 
     },
-    estado: { 
-        type: String, 
-        enum: ['pendiente', 'activo', 'eliminado'], // Solo permite estos 3 valores
-        default: 'pendiente' 
+    confirmado: { 
+        type: Boolean,
+        default: false
     },
     rol: { 
         type: String, 
         enum: ['usuario', 'administrador'],
         default: 'usuario' 
+    },
+    githubId: {
+        type: String,
+        default: null
     }
 }, {
     timestamps: true // Añade fecha de creación y actualización automáticamente

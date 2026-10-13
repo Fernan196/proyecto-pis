@@ -12,14 +12,28 @@ export async function login(email, password) {
     return data; // Devuelve { token, user }
 }
 
-export async function register(email, password) {
+export async function register(username, email, password) {
     const response = await fetch(`${API_URL}/usuarios`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ username, email, password })
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Error en el registro');
+    return data;
+}
+
+export async function cambiarRol(id, nuevoRol, token) {
+    const response = await fetch(`${API_URL}/usuarios/${id}/rol`, {
+        method: 'PATCH',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ nuevoRol })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Error al cambiar rol');
     return data;
 }
 

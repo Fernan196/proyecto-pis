@@ -8,7 +8,20 @@ const SECRET_KEY = process.env.JWT_SECRET || 'clave_secreta_para_los_tests';
 
 const { enviarCorreoConfirmacion } = require('./mailer');
 
-async function registrarUsuario(email, password) {
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+async function registrarUsuario({ username, email, password, rol = 'user' }) {
+    if (!username || !email || !password) {
+        throw new Error('Todos los campos son obligatorios');
+    }
+
+    if (!EMAIL_REGEX.test(email)) {
+        throw new Error('El formato del correo electrónico no es válido');
+    }
+
+    if (password.length < 6) {
+        throw new Error('La contraseña debe tener al menos 6 caracteres');
+    }
     // Consultamos a la BD si el email ya existe
     const usuarioExistente = await User.findOne({ email });
     if (usuarioExistente) throw new Error("El usuario ya existe");
@@ -18,10 +31,11 @@ async function registrarUsuario(email, password) {
 
     // Mongoose crea el registro en la base de datos
     const newUser = await User.create({
+        username,
         email,
         password: hashedPassword, // En el Hito 2 (Sesiones) aplicaremos el hash bcrypt
-        estado: 'pendiente', // Según el apartado 4.1
-        rol: 'usuario'
+        confirmado: false, // Según el apartado 4.1
+        rol
     });
    
     // Generamos un token temporal válido por 1 hora
@@ -36,12 +50,28 @@ async function registrarUsuario(email, password) {
         }
     }
    
-    return newUser;
+    return {
+        mensaje: 'Usuario registrado. Por favor, revisa tu correo para activar tu cuenta.',
+        userId: newUser._id
+    };
 }
 
-async function loginUsuario(email, password) {
-    const user = await User.findOne({ email });
-    if (!user) throw new Error("Credenciales inválidas");
+async function loginUsuario({email, password}) {
+    if (!email || !password) {
+        throw new Error('Email y contraseña requeridos');
+    }
+
+    const usuario = await User.findOne({ email });
+    if (!usuario) {
+        throw new Error('Credenciales incorrectas');
+    }
+
+    // BLOQUEO: Comprobar si la cuenta está activada
+    if (!usuario.confirmado) {
+        const error = new Error('Debes confirmar tu cuenta por correo electrónico antes de poder iniciar sesión.');
+        error.code = 'ACCOUNT_NOT_CONFIRMED';
+        throw error;
+    }
 
     // Comparamos el texto plano con el hash guardado
     const isMatch = await bcrypt.compare(password, user.password);
@@ -49,11 +79,11 @@ async function loginUsuario(email, password) {
 
     // Generamos el token de sesión (JWT)
     const token = jwt.sign(
-        { id: user._id, email: user.email, rol: user.rol, estado: user.estado },
+        { id: usuario._id, email: usuario.email, rol: usuario.rol, confirmado: usuario.confirmado },
         SECRET_KEY,
         { expiresIn: '2h' }
     );
-    return { token, user: { id: user._id, email: user.email, rol: user.rol } };
+    return { token,  user: { id: usuario._id, email: usuario.email, rol: usuario.rol } };
 }
 
 async function listarUsuarios() {
@@ -65,7 +95,7 @@ async function comprobarActivo(id) {
     const user = await User.findById(id);
     if (!user) throw new Error("Usuario no encontrado");
     // Según el apartado 4.2: está activo si su estado es 'activo' y no está eliminado
-    return user.estado === 'activo';
+    return user.confirmado === true;
 }
 
 async function eliminarUsuario(id) {
@@ -81,15 +111,23 @@ async function confirmarCuenta(token) {
         const user = await User.findById(decoded.id);
         
         if (!user) throw new Error("Usuario no encontrado");
-        if (user.estado === 'activo') return true; // Si ya estaba activo, no hacemos nada
+        if (user.confirmado === true) return true; // Si ya estaba activo, no hacemos nada
 
         // Cambiamos el estado a activo y guardamos
-        user.estado = 'activo';
+        user.confirmado = true;
         await user.save();
         return true;
     } catch (error) {
         throw new Error("El enlace de confirmación es inválido o ha expirado.");
     }
+}
+async function cambiarRolUsuario(id, nuevoRol) {
+    if (!['user', 'admin'].includes(nuevoRol)) {
+        throw new Error('Rol no válido');
+    }
+    const usuario = await User.findByIdAndUpdate(id, { rol: nuevoRol }, { new: true }).select('-password');
+    if (!usuario) throw new Error('Usuario no encontrado');
+    return usuario;
 }
 
 async function loginConGitHub(code) {
@@ -131,12 +169,12 @@ async function loginConGitHub(code) {
         user = await User.create({
             email: emailPrincipal,
             password: 'OAUTH_GITHUB_USER', // Contraseña inútil por diseño
-            estado: 'activo',
+            confirmado: true,
             rol: 'usuario'
         });
-    } else if (user.estado !== 'activo') {
+    } else if (user.confirmado !== true) {
         // Si existía pero estaba pendiente, lo activamos
-        user.estado = 'activo';
+        user.confirmado = true;
         await user.save();
     }
 
@@ -151,4 +189,4 @@ async function loginConGitHub(code) {
 }
 
 // Exportamos la función y el array para poder testearlos
-module.exports = { registrarUsuario, loginUsuario, listarUsuarios, comprobarActivo, eliminarUsuario, confirmarCuenta, loginConGitHub };
+module.exports = { registrarUsuario, loginUsuario, listarUsuarios, comprobarActivo, eliminarUsuario, confirmarCuenta, loginConGitHub, cambiarRolUsuario };
