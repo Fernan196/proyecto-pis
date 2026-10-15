@@ -29,6 +29,14 @@ async function registrarUsuario(params, legacyPassword, legacyRol) {
         throw new Error('El formato del correo electrónico no es válido');
     }
 
+    // Comprobar dominios permitidos si la variable ALLOWED_DOMAINS está configurada
+    if (process.env.ALLOWED_DOMAINS) {
+        const { permitido } = comprobarDominioPermitido(email);
+        if (!permitido) {
+            throw new Error('El dominio del correo electrónico no está permitido');
+        }
+    }
+
     if (password.length < 6) {
         throw new Error('La contraseña debe tener al menos 6 caracteres');
     }
@@ -251,6 +259,34 @@ async function procesarLoginGitHub({ githubId, email, username }) {
     };
 }
 
+
+// COMPROBAR DOMINIO PERMITIDO 
+function comprobarDominioPermitido(email) {
+    if (typeof email !== 'string' || email.trim() === '' || !email.includes('@')) {
+        const error = new Error('El campo email es obligatorio, debe ser texto y contener @');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const partes = email.trim().split('@');
+    if (partes.length !== 2 || !partes[0] || !partes[1]) {
+        const error = new Error('El formato del correo electrónico no es válido');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const dominioEmail = partes[1].trim().toLowerCase();
+
+    const dominiosPermitidos = (process.env.ALLOWED_DOMAINS || '')
+        .split(',')
+        .map(d => d.trim().toLowerCase())
+        .filter(Boolean);
+
+    return {
+        permitido: dominiosPermitidos.includes(dominioEmail)
+    };
+}
+
 module.exports = {
     registrarUsuario,
     loginUsuario,
@@ -259,5 +295,6 @@ module.exports = {
     comprobarActivo,
     eliminarUsuario,
     procesarLoginGitHub,
-    cambiarRolUsuario
+    cambiarRolUsuario,
+    comprobarDominioPermitido
 };

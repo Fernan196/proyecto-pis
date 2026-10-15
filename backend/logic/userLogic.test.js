@@ -346,4 +346,48 @@ describe('Pruebas Unitarias de la Capa Lógica (userLogic)', () => {
             expect(estado.email).toBe('check@test.com');
         });
     });
+
+    // ==========================================
+    // 6. DOMINIOS PERMITIDOS (VARIANTE 3)
+    // ==========================================
+    describe('Comprobación de dominios permitidos (variante3)', () => {
+        const envOriginal = process.env.ALLOWED_DOMAINS;
+
+        beforeEach(() => {
+            process.env.ALLOWED_DOMAINS = 'miuni.es,alu.miuni.es';
+        });
+
+        afterAll(() => {
+            process.env.ALLOWED_DOMAINS = envOriginal;
+        });
+
+        test('variante3: permite un email cuyo dominio está en ALLOWED_DOMAINS sin distinguir mayúsculas', () => {
+            const res1 = userLogic.comprobarDominioPermitido('ana@miuni.es');
+            const res2 = userLogic.comprobarDominioPermitido('PEDRO@ALU.MIUNI.ES');
+
+            expect(res1).toEqual({ permitido: true });
+            expect(res2).toEqual({ permitido: true });
+        });
+
+        test('variante3: rechaza un email de un dominio no listado o de un subdominio no autorizado', () => {
+            const resDominioExterno = userLogic.comprobarDominioPermitido('juan@gmail.com');
+            const resSubdominio = userLogic.comprobarDominioPermitido('x@sub.miuni.es');
+
+            expect(resDominioExterno).toEqual({ permitido: false });
+            expect(resSubdominio).toEqual({ permitido: false });
+        });
+
+        test('variante3: lanza un error 400 cuando el email no contiene arroba', () => {
+            expect(() => {
+                userLogic.comprobarDominioPermitido('correosinarroba.es');
+            }).toThrow();
+        });
+
+        test('variante3: lanza un error 400 cuando el email está ausente o no es un string', () => {
+            expect(() => userLogic.comprobarDominioPermitido(undefined)).toThrow();
+            expect(() => userLogic.comprobarDominioPermitido(null)).toThrow();
+            expect(() => userLogic.comprobarDominioPermitido(12345)).toThrow();
+            expect(() => userLogic.comprobarDominioPermitido('')).toThrow();
+        });
+    });
 });

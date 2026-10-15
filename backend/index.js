@@ -148,3 +148,14 @@ app.delete('/api/usuarios/:id', authMiddleware, async (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Servidor ejecutándose en puerto ${PORT}`);
 });
+
+// Endpoint público para prueba de evaluación
+app.post('/api/prueba/dominio', (req, res) => {
+    try {
+        const { email } = req.body || {};
+        const resultado = userLogic.comprobarDominioPermitido(email);
+        return res.status(200).json(resultado);
+    } catch (error) {
+        return res.status(error.statusCode || 400).json({ error: error.message });
+    }
+});
