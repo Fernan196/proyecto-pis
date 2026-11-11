@@ -53,7 +53,7 @@ async function registrarUsuario(params, legacyPassword, legacyRol) {
         username,
         email,
         password: passwordHash,
-        rol,
+        rol: 'user',        //forzar el registro siempre con user (seguridad)
         confirmado: false
     });
 
