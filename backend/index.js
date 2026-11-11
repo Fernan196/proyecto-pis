@@ -21,7 +21,8 @@ mongoose.connect(process.env.MONGODB_URI)
 // 1. Registro
 app.post('/api/usuarios', async (req, res) => {
     try {
-        const resultado = await userLogic.registrarUsuario(req.body);
+        const { username, email, password } = req.body;
+        const resultado = await userLogic.registrarUsuario({ username, email, password });
         res.status(201).json(resultado);
     } catch (error) {
         res.status(400).json({ error: error.message });
