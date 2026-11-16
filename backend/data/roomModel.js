@@ -186,6 +186,29 @@ async function eliminarPorCodigo(codigo) {
 }
 
 /**
+ * Busca la última sala activa (WAITING o IN_PROGRESS) en la que participa un usuario.
+ */
+async function buscarSalaActivaPorJugador(userId) {
+    const uid = String(userId || '').trim();
+    if (!uid) return null;
+
+    if (usarBaseDeDatos()) {
+        const doc = await Room.findOne({
+            estado: { $in: ['WAITING', 'IN_PROGRESS'] },
+            'jugadores.userId': uid
+        }).sort({ updatedAt: -1 });
+        return doc ? doc.toJSON() : null;
+    }
+
+    const sala = Array.from(salasEnMemoria.values())
+        .reverse()
+        .find(s => ['WAITING', 'IN_PROGRESS'].includes(s.estado)
+            && s.jugadores.some(j => String(j.userId) === uid));
+
+    return sala ? clonarSala(sala) : null;
+}
+
+/**
  * Limpia todas las salas en el almacén activo (usado principalmente en pruebas).
  */
 async function limpiarSalas() {
@@ -199,6 +222,7 @@ module.exports = {
     Room,
     crearSalaDatos,
     buscarPorCodigo,
+    buscarSalaActivaPorJugador,
     listarSalasPorEstado,
     actualizarSalaDatos,
     eliminarPorCodigo,

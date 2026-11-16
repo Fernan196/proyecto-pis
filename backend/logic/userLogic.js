@@ -317,6 +317,13 @@ function comprobarDominioPermitido(email) {
     };
 }
 
+/**
+ * Obtiene la clasificación de jugadores ordenada por victorias y porcentaje de éxito.
+ */
+async function obtenerRanking(limite = 10) {
+    return await User.obtenerRankingUsuarios(limite);
+}
+
 module.exports = {
     registrarUsuario,
     loginUsuario,
@@ -326,5 +333,6 @@ module.exports = {
     eliminarUsuario,
     procesarLoginGitHub,
     cambiarRolUsuario,
-    comprobarDominioPermitido
+    comprobarDominioPermitido,
+    obtenerRanking
 };

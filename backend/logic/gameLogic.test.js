@@ -4,6 +4,8 @@ const gameLogic = require('./gameLogic');
 const gameModel = require('../data/gameModel');
 const roomLogic = require('./roomLogic');
 const roomModel = require('../data/roomModel');
+const User = require('../data/userModel');
+const userLogic = require('./userLogic');
 
 function puertoMongoDisponible(host = '127.0.0.1', port = 27017) {
     return new Promise((resolve) => {
@@ -40,11 +42,13 @@ describe('Pruebas Unitarias de la Capa Lógica - Motor de Juego (gameLogic)', ()
     beforeEach(async () => {
         await gameModel.limpiarPartidas();
         await roomModel.limpiarSalas();
+        User.limpiarEstadisticasMemoria();
     });
 
     afterAll(async () => {
         await gameModel.limpiarPartidas();
         await roomModel.limpiarSalas();
+        User.limpiarEstadisticasMemoria();
         if (conectadaPorTest && mongoose.connection.readyState !== 0) {
             await mongoose.connection.close();
         }
@@ -658,5 +662,159 @@ describe('Pruebas Unitarias de la Capa Lógica - Motor de Juego (gameLogic)', ()
             { userId: 'u2', username: 'p2', vivo: true, numCartas: 3 }
         ]);
         expect(vista.jugadores[1].mano).toBeUndefined();
+    });
+
+    test('Al finalizar una partida se incrementan partidasJugadas en todos y partidasGanadas al ganador', async () => {
+        await gameModel.crearPartidaDatos({
+            codigoSala: 'STAT01',
+            estado: 'PLAYING',
+            jugadores: [
+                { userId: 'u1', username: 'perdedor', mano: [], vivo: true },
+                { userId: 'u2', username: 'campeon', mano: ['DEFUSE'], vivo: true }
+            ],
+            mazo: ['BOMB'],
+            descartes: [],
+            turnoActualIndex: 0,
+            turnoActualUserId: 'u1',
+            turnosPendientes: 1
+        });
+
+        await gameLogic.robarCarta({ codigoSala: 'STAT01', userId: 'u1' });
+
+        const ranking = await userLogic.obtenerRanking();
+        const ganador = ranking.find(r => r.userId === 'u2');
+        const perdedor = ranking.find(r => r.userId === 'u1');
+
+        expect(ganador).toEqual({
+            userId: 'u2',
+            username: 'campeon',
+            partidasJugadas: 1,
+            partidasGanadas: 1,
+            porcentajeVictorias: 100
+        });
+        expect(perdedor).toEqual({
+            userId: 'u1',
+            username: 'perdedor',
+            partidasJugadas: 1,
+            partidasGanadas: 0,
+            porcentajeVictorias: 0
+        });
+    });
+
+    test('userLogic.obtenerRanking devuelve la clasificación ordenada por victorias y porcentaje', async () => {
+        await User.registrarResultadoPartidaUsuarios({
+            jugadores: [
+                { userId: 'u1', username: 'ana' },
+                { userId: 'u2', username: 'luis' }
+            ],
+            ganadorId: 'u1'
+        });
+        await User.registrarResultadoPartidaUsuarios({
+            jugadores: [
+                { userId: 'u1', username: 'ana' },
+                { userId: 'u3', username: 'marta' }
+            ],
+            ganadorId: 'u3'
+        });
+        await User.registrarResultadoPartidaUsuarios({
+            jugadores: [
+                { userId: 'u2', username: 'luis' },
+                { userId: 'u3', username: 'marta' }
+            ],
+            ganadorId: 'u3'
+        });
+
+        const ranking = await userLogic.obtenerRanking(10);
+
+        expect(ranking).toHaveLength(3);
+        expect(ranking[0]).toMatchObject({ userId: 'u3', partidasGanadas: 2, partidasJugadas: 2, porcentajeVictorias: 100 });
+        expect(ranking[1]).toMatchObject({ userId: 'u1', partidasGanadas: 1, partidasJugadas: 2, porcentajeVictorias: 50 });
+        expect(ranking[2]).toMatchObject({ userId: 'u2', partidasGanadas: 0, partidasJugadas: 2, porcentajeVictorias: 0 });
+    });
+
+    test('obtenerSesionJuegoActiva recupera la sala en espera (tipo SALA) tras recargar', async () => {
+        const sala = await roomLogic.crearSala({
+            hostId: 'u1',
+            hostUsername: 'host',
+            nombre: 'Sala Reconexion',
+            maxJugadores: 4
+        });
+        await roomLogic.unirseASala({ codigo: sala.codigo, userId: 'u2', username: 'invitado' });
+
+        const sesion = await gameLogic.obtenerSesionJuegoActiva('u2');
+
+        expect(sesion.enCurso).toBe(true);
+        expect(sesion.tipo).toBe('SALA');
+        expect(sesion.codigoSala).toBe(sala.codigo);
+        expect(sesion.sala.codigo).toBe(sala.codigo);
+        expect(sesion.vistaJugador).toBeNull();
+    });
+
+    test('obtenerSesionJuegoActiva recupera la partida activa (tipo PARTIDA) con vistaJugador segura tras recargar', async () => {
+        const sala = await roomLogic.crearSala({
+            hostId: 'u1',
+            hostUsername: 'host',
+            nombre: 'Partida Reconexion',
+            maxJugadores: 2
+        });
+        await roomLogic.unirseASala({ codigo: sala.codigo, userId: 'u2', username: 'rival' });
+        await gameLogic.iniciarPartidaDesdeSala({ codigoSala: sala.codigo, solicitanteId: 'u1' });
+
+        const sesion = await gameLogic.obtenerSesionJuegoActiva('u2');
+
+        expect(sesion.enCurso).toBe(true);
+        expect(sesion.tipo).toBe('PARTIDA');
+        expect(sesion.codigoSala).toBe(sala.codigo);
+        expect(sesion.vistaJugador).not.toBeNull();
+        expect(sesion.vistaJugador.miMano).toHaveLength(8);
+        expect(sesion.vistaJugador.mazo).toBeUndefined();
+    });
+
+    test('obtenerSesionJuegoActiva devuelve enCurso false cuando la partida termina o el usuario sale de la sala', async () => {
+        const sala = await roomLogic.crearSala({
+            hostId: 'u1',
+            hostUsername: 'host',
+            nombre: 'Sala Salida',
+            maxJugadores: 3
+        });
+        await roomLogic.unirseASala({ codigo: sala.codigo, userId: 'u2', username: 'p2' });
+        await roomLogic.salirDeSala({ codigo: sala.codigo, userId: 'u2' });
+
+        const sesionTrasSalir = await gameLogic.obtenerSesionJuegoActiva('u2');
+        expect(sesionTrasSalir).toEqual({
+            enCurso: false,
+            tipo: null,
+            codigoSala: null,
+            sala: null,
+            vistaJugador: null
+        });
+
+        await gameModel.crearPartidaDatos({
+            codigoSala: 'ACAB01',
+            estado: 'FINISHED',
+            jugadores: [
+                { userId: 'u3', username: 'p3', mano: [], vivo: false },
+                { userId: 'u4', username: 'p4', mano: ['DEFUSE'], vivo: true }
+            ],
+            mazo: ['SKIP'],
+            descartes: ['BOMB'],
+            turnoActualIndex: 1,
+            turnoActualUserId: 'u4',
+            turnosPendientes: 1,
+            ganadorId: 'u4',
+            ganadorUsername: 'p4'
+        });
+
+        const sesionFinalizada = await gameLogic.obtenerSesionJuegoActiva('u4');
+        expect(sesionFinalizada.enCurso).toBe(false);
+    });
+
+    test('Error: obtenerSesionJuegoActiva exige userId (error 400)', async () => {
+        await expect(
+            gameLogic.obtenerSesionJuegoActiva('')
+        ).rejects.toMatchObject({
+            message: 'El identificador del usuario es obligatorio',
+            statusCode: 400
+        });
     });
 });
