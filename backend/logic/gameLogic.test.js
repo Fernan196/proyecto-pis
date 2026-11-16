@@ -346,4 +346,317 @@ describe('Pruebas Unitarias de la Capa Lógica - Motor de Juego (gameLogic)', ()
             statusCode: 400
         });
     });
+
+    test('SKIP termina el turno sin robar y si estaba bajo ATTACK solo descuenta 1 turno', async () => {
+        await gameModel.crearPartidaDatos({
+            codigoSala: 'SKIP01',
+            estado: 'PLAYING',
+            jugadores: [
+                { userId: 'u1', username: 'p1', mano: ['SKIP', 'DEFUSE'], vivo: true },
+                { userId: 'u2', username: 'p2', mano: ['SKIP', 'CAT_1'], vivo: true }
+            ],
+            mazo: ['SHUFFLE', 'BOMB'],
+            descartes: [],
+            turnoActualIndex: 0,
+            turnoActualUserId: 'u1',
+            turnosPendientes: 2
+        });
+
+        const primerSalto = await gameLogic.jugarCarta({
+            codigoSala: 'SKIP01',
+            userId: 'u1',
+            tipoCarta: 'SKIP'
+        });
+
+        expect(primerSalto.evento).toBe('CARTA_JUGADA');
+        expect(primerSalto.partida.turnoActualUserId).toBe('u1');
+        expect(primerSalto.partida.turnosPendientes).toBe(1);
+        expect(primerSalto.partida.mazo).toEqual(['SHUFFLE', 'BOMB']);
+
+        await gameModel.actualizarPartidaDatos('SKIP01', {
+            jugadores: [
+                { userId: 'u1', username: 'p1', mano: ['SKIP', 'DEFUSE'], vivo: true },
+                { userId: 'u2', username: 'p2', mano: ['SKIP', 'CAT_1'], vivo: true }
+            ]
+        });
+
+        const segundoSalto = await gameLogic.jugarCarta({
+            codigoSala: 'SKIP01',
+            userId: 'u1',
+            tipoCarta: 'SKIP'
+        });
+
+        expect(segundoSalto.partida.turnoActualUserId).toBe('u2');
+        expect(segundoSalto.partida.turnosPendientes).toBe(1);
+    });
+
+    test('ATTACK termina el turno sin robar y asigna 2 turnos pendientes al siguiente jugador vivo', async () => {
+        await gameModel.crearPartidaDatos({
+            codigoSala: 'ATTK01',
+            estado: 'PLAYING',
+            jugadores: [
+                { userId: 'u1', username: 'p1', mano: ['ATTACK', 'DEFUSE'], vivo: true },
+                { userId: 'u2', username: 'p2', mano: ['CAT_1'], vivo: false },
+                { userId: 'u3', username: 'p3', mano: ['DEFUSE'], vivo: true }
+            ],
+            mazo: ['SKIP', 'SHUFFLE'],
+            descartes: [],
+            turnoActualIndex: 0,
+            turnoActualUserId: 'u1',
+            turnosPendientes: 1
+        });
+
+        const res = await gameLogic.jugarCarta({
+            codigoSala: 'ATTK01',
+            userId: 'u1',
+            tipoCarta: 'ATTACK'
+        });
+
+        expect(res.evento).toBe('CARTA_JUGADA');
+        expect(res.partida.jugadores[0].mano).toEqual(['DEFUSE']);
+        expect(res.partida.descartes).toEqual(['ATTACK']);
+        expect(res.partida.turnoActualIndex).toBe(2);
+        expect(res.partida.turnoActualUserId).toBe('u3');
+        expect(res.partida.turnosPendientes).toBe(2);
+        expect(res.partida.mazo).toEqual(['SKIP', 'SHUFFLE']);
+    });
+
+    test('SEE_FUTURE devuelve las 3 primeras cartas del mazo sin alterar el mazo ni cambiar turno', async () => {
+        await gameModel.crearPartidaDatos({
+            codigoSala: 'FUTU01',
+            estado: 'PLAYING',
+            jugadores: [
+                { userId: 'u1', username: 'p1', mano: ['SEE_FUTURE', 'DEFUSE'], vivo: true },
+                { userId: 'u2', username: 'p2', mano: ['DEFUSE'], vivo: true }
+            ],
+            mazo: ['BOMB', 'SKIP', 'FAVOR', 'CAT_1'],
+            descartes: [],
+            turnoActualIndex: 0,
+            turnoActualUserId: 'u1',
+            turnosPendientes: 1
+        });
+
+        const res = await gameLogic.jugarCarta({
+            codigoSala: 'FUTU01',
+            userId: 'u1',
+            tipoCarta: 'SEE_FUTURE'
+        });
+
+        expect(res.evento).toBe('VISION_FUTURO');
+        expect(res.cartasFuturo).toEqual(['BOMB', 'SKIP', 'FAVOR']);
+        expect(res.partida.mazo).toEqual(['BOMB', 'SKIP', 'FAVOR', 'CAT_1']);
+        expect(res.partida.jugadores[0].mano).toEqual(['DEFUSE']);
+        expect(res.partida.descartes).toEqual(['SEE_FUTURE']);
+        expect(res.partida.turnoActualUserId).toBe('u1');
+    });
+
+    test('SHUFFLE consume la carta, baraja el mazo conservando todas sus cartas y mantiene el turno', async () => {
+        const mazoOriginal = ['BOMB', 'SKIP', 'FAVOR', 'CAT_1'];
+        await gameModel.crearPartidaDatos({
+            codigoSala: 'SHUF01',
+            estado: 'PLAYING',
+            jugadores: [
+                { userId: 'u1', username: 'p1', mano: ['SHUFFLE', 'DEFUSE'], vivo: true },
+                { userId: 'u2', username: 'p2', mano: ['DEFUSE'], vivo: true }
+            ],
+            mazo: mazoOriginal,
+            descartes: [],
+            turnoActualIndex: 0,
+            turnoActualUserId: 'u1',
+            turnosPendientes: 1
+        });
+
+        const res = await gameLogic.jugarCarta({
+            codigoSala: 'SHUF01',
+            userId: 'u1',
+            tipoCarta: 'SHUFFLE',
+            rng: () => 0
+        });
+
+        expect(res.evento).toBe('MAZO_BARAJADO');
+        expect(res.partida.jugadores[0].mano).toEqual(['DEFUSE']);
+        expect(res.partida.descartes).toEqual(['SHUFFLE']);
+        expect(res.partida.turnoActualUserId).toBe('u1');
+        expect([...res.partida.mazo].sort()).toEqual([...mazoOriginal].sort());
+        expect(res.partida.mazo).not.toEqual(mazoOriginal);
+    });
+
+    test('FAVOR roba 1 carta de la mano del rival objetivo y la añade a la mano del jugador en turno', async () => {
+        await gameModel.crearPartidaDatos({
+            codigoSala: 'FAVR01',
+            estado: 'PLAYING',
+            jugadores: [
+                { userId: 'u1', username: 'p1', mano: ['FAVOR'], vivo: true },
+                { userId: 'u2', username: 'p2', mano: ['SKIP', 'DEFUSE'], vivo: true }
+            ],
+            mazo: ['BOMB'],
+            descartes: [],
+            turnoActualIndex: 0,
+            turnoActualUserId: 'u1',
+            turnosPendientes: 1
+        });
+
+        const res = await gameLogic.jugarCarta({
+            codigoSala: 'FAVR01',
+            userId: 'u1',
+            tipoCarta: 'FAVOR',
+            objetivoUserId: 'u2',
+            rng: () => 0
+        });
+
+        expect(res.evento).toBe('CARTA_ROBADA_RIVAL');
+        expect(res.cartaRobadaRival).toBe('SKIP');
+        expect(res.partida.jugadores[0].mano).toEqual(['SKIP']);
+        expect(res.partida.jugadores[1].mano).toEqual(['DEFUSE']);
+        expect(res.partida.descartes).toEqual(['FAVOR']);
+        expect(res.partida.turnoActualUserId).toBe('u1');
+    });
+
+    test('Pareja de CAT_1 consume las 2 cartas iguales y roba 1 carta de la mano del rival objetivo', async () => {
+        await gameModel.crearPartidaDatos({
+            codigoSala: 'CATS01',
+            estado: 'PLAYING',
+            jugadores: [
+                { userId: 'u1', username: 'p1', mano: ['CAT_1', 'DEFUSE', 'CAT_1'], vivo: true },
+                { userId: 'u2', username: 'p2', mano: ['ATTACK'], vivo: true }
+            ],
+            mazo: ['BOMB'],
+            descartes: [],
+            turnoActualIndex: 0,
+            turnoActualUserId: 'u1',
+            turnosPendientes: 1
+        });
+
+        const res = await gameLogic.jugarCarta({
+            codigoSala: 'CATS01',
+            userId: 'u1',
+            tipoCarta: 'CAT_1',
+            objetivoUserId: 'u2',
+            rng: () => 0
+        });
+
+        expect(res.evento).toBe('CARTA_ROBADA_RIVAL');
+        expect(res.cartaRobadaRival).toBe('ATTACK');
+        expect(res.partida.jugadores[0].mano).toEqual(['DEFUSE', 'ATTACK']);
+        expect(res.partida.jugadores[1].mano).toEqual([]);
+        expect(res.partida.descartes).toEqual(['CAT_1', 'CAT_1']);
+    });
+
+    test('Error: No permite jugar una carta de gato (CAT_1) teniendo solo 1 copia en mano (error 400)', async () => {
+        await gameModel.crearPartidaDatos({
+            codigoSala: 'CATS02',
+            estado: 'PLAYING',
+            jugadores: [
+                { userId: 'u1', username: 'p1', mano: ['CAT_1', 'CAT_2'], vivo: true },
+                { userId: 'u2', username: 'p2', mano: ['DEFUSE'], vivo: true }
+            ],
+            mazo: ['BOMB'],
+            descartes: [],
+            turnoActualIndex: 0,
+            turnoActualUserId: 'u1',
+            turnosPendientes: 1
+        });
+
+        await expect(
+            gameLogic.jugarCarta({
+                codigoSala: 'CATS02',
+                userId: 'u1',
+                tipoCarta: 'CAT_1',
+                objetivoUserId: 'u2'
+            })
+        ).rejects.toMatchObject({
+            message: 'Necesitas una pareja de cartas iguales de Michi para jugarlas',
+            statusCode: 400
+        });
+    });
+
+    test('Error: Rechaza jugar carta que no posee, fuera de turno, o BOMB/DEFUSE manualmente', async () => {
+        await gameModel.crearPartidaDatos({
+            codigoSala: 'ERRJ01',
+            estado: 'PLAYING',
+            jugadores: [
+                { userId: 'u1', username: 'p1', mano: ['DEFUSE'], vivo: true },
+                { userId: 'u2', username: 'p2', mano: ['SKIP'], vivo: true }
+            ],
+            mazo: ['BOMB'],
+            descartes: [],
+            turnoActualIndex: 0,
+            turnoActualUserId: 'u1',
+            turnosPendientes: 1
+        });
+
+        await expect(
+            gameLogic.jugarCarta({ codigoSala: 'ERRJ01', userId: 'u2', tipoCarta: 'SKIP' })
+        ).rejects.toMatchObject({ statusCode: 403 });
+
+        await expect(
+            gameLogic.jugarCarta({ codigoSala: 'ERRJ01', userId: 'u1', tipoCarta: 'SKIP' })
+        ).rejects.toMatchObject({ message: 'No tienes esa carta en tu mano', statusCode: 400 });
+
+        await expect(
+            gameLogic.jugarCarta({ codigoSala: 'ERRJ01', userId: 'u1', tipoCarta: 'DEFUSE' })
+        ).rejects.toMatchObject({ statusCode: 400 });
+
+        await expect(
+            gameLogic.jugarCarta({ codigoSala: 'ERRJ01', userId: 'u1', tipoCarta: 'BOMB' })
+        ).rejects.toMatchObject({ statusCode: 400 });
+    });
+
+    test('Error: Rechaza FAVOR o pareja contra uno mismo, rival eliminado o rival sin cartas (error 400)', async () => {
+        await gameModel.crearPartidaDatos({
+            codigoSala: 'ERROBJ',
+            estado: 'PLAYING',
+            jugadores: [
+                { userId: 'u1', username: 'p1', mano: ['FAVOR', 'CAT_1', 'CAT_1'], vivo: true },
+                { userId: 'u2', username: 'p2', mano: [], vivo: false },
+                { userId: 'u3', username: 'p3', mano: [], vivo: true }
+            ],
+            mazo: ['BOMB'],
+            descartes: [],
+            turnoActualIndex: 0,
+            turnoActualUserId: 'u1',
+            turnosPendientes: 1
+        });
+
+        await expect(
+            gameLogic.jugarCarta({ codigoSala: 'ERROBJ', userId: 'u1', tipoCarta: 'FAVOR', objetivoUserId: 'u1' })
+        ).rejects.toMatchObject({ statusCode: 400 });
+
+        await expect(
+            gameLogic.jugarCarta({ codigoSala: 'ERROBJ', userId: 'u1', tipoCarta: 'FAVOR', objetivoUserId: 'u2' })
+        ).rejects.toMatchObject({ statusCode: 400 });
+
+        await expect(
+            gameLogic.jugarCarta({ codigoSala: 'ERROBJ', userId: 'u1', tipoCarta: 'CAT_1', objetivoUserId: 'u3' })
+        ).rejects.toMatchObject({ message: 'El jugador objetivo no tiene cartas en su mano', statusCode: 400 });
+    });
+
+    test('obtenerVistaJugador expone miMano y numCartas, pero oculta mazo y manos rivales', async () => {
+        const partida = await gameModel.crearPartidaDatos({
+            codigoSala: 'VIST01',
+            estado: 'PLAYING',
+            jugadores: [
+                { userId: 'u1', username: 'p1', mano: ['DEFUSE', 'SKIP'], vivo: true },
+                { userId: 'u2', username: 'p2', mano: ['ATTACK', 'SEE_FUTURE', 'CAT_1'], vivo: true }
+            ],
+            mazo: ['BOMB', 'SHUFFLE', 'FAVOR', 'CAT_2'],
+            descartes: ['SKIP'],
+            turnoActualIndex: 0,
+            turnoActualUserId: 'u1',
+            turnosPendientes: 1
+        });
+
+        const vista = gameLogic.obtenerVistaJugador(partida, 'u1');
+
+        expect(vista.miMano).toEqual(['DEFUSE', 'SKIP']);
+        expect(vista.cartasRestantesMazo).toBe(4);
+        expect(vista.riesgoBombaPorcentaje).toBe(25);
+        expect(vista.ultimaCartaDescartada).toBe('SKIP');
+        expect(vista.mazo).toBeUndefined();
+        expect(vista.jugadores).toEqual([
+            { userId: 'u1', username: 'p1', vivo: true, numCartas: 2 },
+            { userId: 'u2', username: 'p2', vivo: true, numCartas: 3 }
+        ]);
+        expect(vista.jugadores[1].mano).toBeUndefined();
+    });
 });

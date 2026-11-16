@@ -228,10 +228,30 @@ app.post('/api/salas/:codigo/iniciar', authMiddleware, async (req, res) => {
 // 11. Motor de juego (Partidas)
 app.get('/api/partidas/:codigo', authMiddleware, async (req, res) => {
     try {
-        const partida = await gameLogic.obtenerPartida(req.params.codigo);
-        res.json(partida);
+        const vista = await gameLogic.obtenerPartidaVistaJugador({
+            codigoSala: req.params.codigo,
+            userId: req.user.id
+        });
+        res.json(vista);
     } catch (error) {
         res.status(error.statusCode || 404).json({ error: error.message });
+    }
+});
+
+app.post('/api/partidas/:codigo/jugar', authMiddleware, async (req, res) => {
+    try {
+        const resultado = await gameLogic.jugarCarta({
+            codigoSala: req.params.codigo,
+            userId: req.user.id,
+            tipoCarta: req.body?.tipoCarta,
+            objetivoUserId: req.body?.objetivoUserId
+        });
+        res.json({
+            ...resultado,
+            vistaJugador: gameLogic.obtenerVistaJugador(resultado.partida, req.user.id)
+        });
+    } catch (error) {
+        res.status(error.statusCode || 400).json({ error: error.message });
     }
 });
 
@@ -242,7 +262,10 @@ app.post('/api/partidas/:codigo/robar', authMiddleware, async (req, res) => {
             userId: req.user.id,
             posicionBomba: req.body?.posicionBomba
         });
-        res.json(resultado);
+        res.json({
+            ...resultado,
+            vistaJugador: gameLogic.obtenerVistaJugador(resultado.partida, req.user.id)
+        });
     } catch (error) {
         res.status(error.statusCode || 400).json({ error: error.message });
     }
@@ -255,7 +278,10 @@ app.post('/api/partidas/:codigo/reinsertar-bomba', authMiddleware, async (req, r
             userId: req.user.id,
             posicionBomba: req.body?.posicionBomba
         });
-        res.json(resultado);
+        res.json({
+            ...resultado,
+            vistaJugador: gameLogic.obtenerVistaJugador(resultado.partida, req.user.id)
+        });
     } catch (error) {
         res.status(error.statusCode || 400).json({ error: error.message });
     }

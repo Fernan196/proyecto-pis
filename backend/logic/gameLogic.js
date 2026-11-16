@@ -19,12 +19,39 @@ const CATALOGO_CARTAS = {
 };
 
 const CARTAS_BASE_REPARTO = ['SKIP', 'ATTACK', 'SEE_FUTURE', 'SHUFFLE', 'FAVOR', 'CAT_1', 'CAT_2', 'CAT_3', 'CAT_4'];
+const TIPOS_GATO = ['CAT_1', 'CAT_2', 'CAT_3', 'CAT_4'];
 const CARTAS_INICIALES_POR_JUGADOR = 7;
 
 function crearErrorHttp(mensaje, statusCode = 400) {
     const error = new Error(mensaje);
     error.statusCode = statusCode;
     return error;
+}
+
+function validarEstadoYTirador(partida, userId) {
+    if (!userId) {
+        throw crearErrorHttp('El identificador del usuario es obligatorio', 400);
+    }
+    if (partida.estado === 'FINISHED') {
+        throw crearErrorHttp('La partida ya ha finalizado', 400);
+    }
+    if (partida.estado === 'WAITING_DEFUSE_INSERT') {
+        throw crearErrorHttp('Debes reinsertar el Michi Explosivo en el mazo antes de continuar', 400);
+    }
+    if (String(partida.turnoActualUserId) !== String(userId)) {
+        throw crearErrorHttp('No es tu turno', 403);
+    }
+}
+
+function consumirCartasMano(mano, descartes, tipoCarta, cantidad = 1) {
+    for (let i = 0; i < cantidad; i += 1) {
+        const idx = mano.indexOf(tipoCarta);
+        if (idx === -1) {
+            throw crearErrorHttp('No tienes suficientes copias de esa carta', 400);
+        }
+        mano.splice(idx, 1);
+        descartes.push(tipoCarta);
+    }
 }
 
 /**
@@ -247,15 +274,7 @@ async function robarCarta({ codigoSala, userId, posicionBomba }) {
     }
 
     const partida = await obtenerPartida(codigoSala);
-    if (partida.estado === 'FINISHED') {
-        throw crearErrorHttp('La partida ya ha finalizado', 400);
-    }
-    if (partida.estado === 'WAITING_DEFUSE_INSERT') {
-        throw crearErrorHttp('Debes reinsertar el Michi Explosivo en el mazo antes de continuar', 400);
-    }
-    if (String(partida.turnoActualUserId) !== String(userId)) {
-        throw crearErrorHttp('No es tu turno', 403);
-    }
+    validarEstadoYTirador(partida, userId);
     if (partida.mazo.length === 0) {
         throw crearErrorHttp('No quedan cartas en el mazo', 400);
     }
@@ -438,14 +457,203 @@ async function reinsertarBomba({ codigoSala, userId, posicionBomba }) {
     };
 }
 
+/**
+ * Construye una vista segura de la partida para un jugador concreto,
+ * ocultando el mazo completo y las cartas en mano de los rivales.
+ */
+function obtenerVistaJugador(partida, userId) {
+    const mazo = Array.isArray(partida.mazo) ? partida.mazo : [];
+    const bombasRestantes = mazo.filter(c => c === 'BOMB').length;
+    const riesgoBombaPorcentaje = mazo.length === 0 ? 0 : Math.round((bombasRestantes / mazo.length) * 100);
+    const solicitante = partida.jugadores.find(j => String(j.userId) === String(userId));
+    const descartes = [...(partida.descartes || [])];
+
+    return {
+        id: partida.id,
+        codigoSala: partida.codigoSala,
+        estado: partida.estado,
+        cartasRestantesMazo: mazo.length,
+        riesgoBombaPorcentaje,
+        descartes,
+        ultimaCartaDescartada: descartes[descartes.length - 1] || null,
+        turnoActualIndex: partida.turnoActualIndex,
+        turnoActualUserId: partida.turnoActualUserId,
+        turnosPendientes: partida.turnosPendientes,
+        jugadorDesactivando: partida.jugadorDesactivando,
+        ganadorId: partida.ganadorId,
+        ganadorUsername: partida.ganadorUsername,
+        historialAcciones: [...(partida.historialAcciones || [])],
+        miMano: solicitante ? [...solicitante.mano] : [],
+        jugadores: partida.jugadores.map(j => ({
+            userId: j.userId,
+            username: j.username,
+            vivo: j.vivo,
+            numCartas: j.mano.length
+        }))
+    };
+}
+
+/**
+ * Obtiene una partida existente filtrada como vista segura para el jugador solicitante.
+ */
+async function obtenerPartidaVistaJugador({ codigoSala, userId }) {
+    const partida = await obtenerPartida(codigoSala);
+    return obtenerVistaJugador(partida, userId);
+}
+
+/**
+ * Ejecuta una carta de acción o pareja de Michis en el turno del jugador.
+ */
+async function jugarCarta({ codigoSala, userId, tipoCarta, objetivoUserId = null, rng = Math.random }) {
+    if (!userId) {
+        throw crearErrorHttp('El identificador del usuario es obligatorio', 400);
+    }
+    if (typeof tipoCarta !== 'string' || tipoCarta.trim() === '') {
+        throw crearErrorHttp('El tipo de carta es obligatorio', 400);
+    }
+
+    const partida = await obtenerPartida(codigoSala);
+    validarEstadoYTirador(partida, userId);
+
+    const tipo = tipoCarta.trim().toUpperCase();
+    if (!CATALOGO_CARTAS[tipo] || tipo === 'BOMB' || tipo === 'DEFUSE') {
+        throw crearErrorHttp('Esta carta no se puede jugar manualmente en tu turno', 400);
+    }
+
+    const jugadores = partida.jugadores.map(j => ({ ...j, mano: [...j.mano] }));
+    const jugadorActual = jugadores[partida.turnoActualIndex];
+    const descartes = [...(partida.descartes || [])];
+    const historialAcciones = [...(partida.historialAcciones || [])];
+
+    const esParejaGato = TIPOS_GATO.includes(tipo);
+    if (esParejaGato) {
+        const copias = jugadorActual.mano.filter(c => c === tipo).length;
+        if (copias < 2) {
+            throw crearErrorHttp('Necesitas una pareja de cartas iguales de Michi para jugarlas', 400);
+        }
+    } else if (!jugadorActual.mano.includes(tipo)) {
+        throw crearErrorHttp('No tienes esa carta en tu mano', 400);
+    }
+
+    if (tipo === 'SKIP') {
+        consumirCartasMano(jugadorActual.mano, descartes, 'SKIP', 1);
+        const siguienteTurno = avanzarTurno(jugadores, partida.turnoActualIndex, partida.turnosPendientes);
+        historialAcciones.push(`${jugadorActual.username} jugó Salto Gatuno y terminó su turno sin robar.`);
+
+        const actualizada = await gameModel.actualizarPartidaDatos(partida.codigoSala, {
+            jugadores,
+            descartes,
+            ...siguienteTurno,
+            historialAcciones
+        });
+        logger.registrarEvento('CARTA_JUGADA', { codigoSala: partida.codigoSala, userId: String(userId), tipoCarta: tipo });
+        return { evento: 'CARTA_JUGADA', tipoCarta: 'SKIP', partida: actualizada };
+    }
+
+    if (tipo === 'ATTACK') {
+        consumirCartasMano(jugadorActual.mano, descartes, 'ATTACK', 1);
+        const sig = avanzarTurno(jugadores, partida.turnoActualIndex, 1);
+        const siguienteTurno = { ...sig, turnosPendientes: 2 };
+        historialAcciones.push(
+            `${jugadorActual.username} lanzó Emboscada Felina contra ${jugadores[sig.turnoActualIndex].username} (2 turnos).`
+        );
+
+        const actualizada = await gameModel.actualizarPartidaDatos(partida.codigoSala, {
+            jugadores,
+            descartes,
+            ...siguienteTurno,
+            historialAcciones
+        });
+        logger.registrarEvento('CARTA_JUGADA', { codigoSala: partida.codigoSala, userId: String(userId), tipoCarta: tipo });
+        return { evento: 'CARTA_JUGADA', tipoCarta: 'ATTACK', partida: actualizada };
+    }
+
+    if (tipo === 'SEE_FUTURE') {
+        consumirCartasMano(jugadorActual.mano, descartes, 'SEE_FUTURE', 1);
+        const cartasFuturo = partida.mazo.slice(0, 3);
+        historialAcciones.push(`${jugadorActual.username} usó Visión Felina para espiar el mazo.`);
+
+        const actualizada = await gameModel.actualizarPartidaDatos(partida.codigoSala, {
+            jugadores,
+            descartes,
+            historialAcciones
+        });
+        logger.registrarEvento('CARTA_JUGADA', { codigoSala: partida.codigoSala, userId: String(userId), tipoCarta: tipo });
+        return { evento: 'VISION_FUTURO', tipoCarta: 'SEE_FUTURE', cartasFuturo, partida: actualizada };
+    }
+
+    if (tipo === 'SHUFFLE') {
+        consumirCartasMano(jugadorActual.mano, descartes, 'SHUFFLE', 1);
+        const nuevoMazo = barajarArray(partida.mazo, rng);
+        historialAcciones.push(`${jugadorActual.username} usó Terremoto en el Arenero y barajó el mazo.`);
+
+        const actualizada = await gameModel.actualizarPartidaDatos(partida.codigoSala, {
+            jugadores,
+            descartes,
+            mazo: nuevoMazo,
+            historialAcciones
+        });
+        logger.registrarEvento('CARTA_JUGADA', { codigoSala: partida.codigoSala, userId: String(userId), tipoCarta: tipo });
+        return { evento: 'MAZO_BARAJADO', tipoCarta: 'SHUFFLE', partida: actualizada };
+    }
+
+    // FAVOR o pareja de Michis (CAT_1..4): roban 1 carta aleatoria de un rival vivo
+    if (!objetivoUserId || String(objetivoUserId) === String(userId)) {
+        throw crearErrorHttp('Debes elegir a otro jugador como objetivo', 400);
+    }
+
+    const objetivo = jugadores.find(j => String(j.userId) === String(objetivoUserId));
+    if (!objetivo || !objetivo.vivo) {
+        throw crearErrorHttp('El jugador objetivo no es válido o está eliminado', 400);
+    }
+    if (objetivo.mano.length === 0) {
+        throw crearErrorHttp('El jugador objetivo no tiene cartas en su mano', 400);
+    }
+
+    const cantidadConsumo = esParejaGato ? 2 : 1;
+    consumirCartasMano(jugadorActual.mano, descartes, tipo, cantidadConsumo);
+
+    const idxRobado = Math.floor(rng() * objetivo.mano.length);
+    const [cartaRobadaRival] = objetivo.mano.splice(idxRobado, 1);
+    jugadorActual.mano.push(cartaRobadaRival);
+
+    historialAcciones.push(
+        `${jugadorActual.username} robó una carta a ${objetivo.username} con ${CATALOGO_CARTAS[tipo].nombre}.`
+    );
+
+    const actualizada = await gameModel.actualizarPartidaDatos(partida.codigoSala, {
+        jugadores,
+        descartes,
+        historialAcciones
+    });
+    logger.registrarEvento('CARTA_JUGADA', {
+        codigoSala: partida.codigoSala,
+        userId: String(userId),
+        tipoCarta: tipo,
+        objetivoUserId: String(objetivoUserId)
+    });
+
+    return {
+        evento: 'CARTA_ROBADA_RIVAL',
+        tipoCarta: tipo,
+        objetivoUserId: String(objetivoUserId),
+        cartaRobadaRival,
+        partida: actualizada
+    };
+}
+
 module.exports = {
     CATALOGO_CARTAS,
+    TIPOS_GATO,
     barajarArray,
     construirMazoInicial,
     iniciarPartidaDirecta,
     iniciarPartidaDesdeSala,
     obtenerPartida,
+    obtenerVistaJugador,
+    obtenerPartidaVistaJugador,
     avanzarTurno,
     robarCarta,
-    reinsertarBomba
+    reinsertarBomba,
+    jugarCarta
 };
