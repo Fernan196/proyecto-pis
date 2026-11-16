@@ -1,18 +1,27 @@
 require('dotenv').config();
+const http = require('http');
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const { Server } = require('socket.io');
 
 const userLogic = require('./logic/userLogic');
 const roomLogic = require('./logic/roomLogic');
 const gameLogic = require('./logic/gameLogic');
+const socketManager = require('./logic/socketManager');
 const authMiddleware = require('./logic/authMiddleware');
 const adminMiddleware = require('./logic/adminMiddleware');
 const logger = require('./logic/logger');
 
 const app = express();
+const server = http.createServer(app);
 const PORT = process.env.PORT || 8080;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://proyecto-pis.vercel.app';
+
+const io = new Server(server, {
+    cors: { origin: FRONTEND_URL, credentials: true }
+});
+socketManager.configurarSocketIO(io);
 
 app.use(cors({ origin: FRONTEND_URL, credentials: true }));
 app.use(express.json());
@@ -195,6 +204,7 @@ app.post('/api/salas/:codigo/unirse', authMiddleware, async (req, res) => {
             userId: req.user.id,
             username: req.user.username || req.user.email
         });
+        socketManager.emitirActualizacionSala(sala.codigo, sala);
         res.json(sala);
     } catch (error) {
         res.status(error.statusCode || 400).json({ error: error.message });
@@ -207,6 +217,11 @@ app.post('/api/salas/:codigo/salir', authMiddleware, async (req, res) => {
             codigo: req.params.codigo,
             userId: req.user.id
         });
+        if (resultado.eliminada) {
+            socketManager.emitirSalaEliminada(resultado.codigo);
+        } else if (resultado.sala) {
+            socketManager.emitirActualizacionSala(resultado.sala.codigo, resultado.sala);
+        }
         res.json(resultado);
     } catch (error) {
         res.status(error.statusCode || 400).json({ error: error.message });
@@ -218,6 +233,11 @@ app.post('/api/salas/:codigo/iniciar', authMiddleware, async (req, res) => {
         const resultado = await gameLogic.iniciarPartidaDesdeSala({
             codigoSala: req.params.codigo,
             solicitanteId: req.user.id
+        });
+        socketManager.emitirActualizacionSala(resultado.codigo, resultado);
+        socketManager.emitirEstadoPartidaPorJugador(resultado.partida, {
+            evento: 'PARTIDA_INICIADA',
+            actorUserId: String(req.user.id)
         });
         res.json(resultado);
     } catch (error) {
@@ -246,6 +266,18 @@ app.post('/api/partidas/:codigo/jugar', authMiddleware, async (req, res) => {
             tipoCarta: req.body?.tipoCarta,
             objetivoUserId: req.body?.objetivoUserId
         });
+        if (resultado.evento === 'VISION_FUTURO') {
+            socketManager.emitirCartasFuturoPrivadas(
+                req.user.id,
+                resultado.partida.codigoSala,
+                resultado.cartasFuturo
+            );
+        }
+        socketManager.emitirEstadoPartidaPorJugador(resultado.partida, {
+            evento: resultado.evento,
+            tipoCarta: resultado.tipoCarta,
+            actorUserId: String(req.user.id)
+        });
         res.json({
             ...resultado,
             vistaJugador: gameLogic.obtenerVistaJugador(resultado.partida, req.user.id)
@@ -261,6 +293,10 @@ app.post('/api/partidas/:codigo/robar', authMiddleware, async (req, res) => {
             codigoSala: req.params.codigo,
             userId: req.user.id,
             posicionBomba: req.body?.posicionBomba
+        });
+        socketManager.emitirEstadoPartidaPorJugador(resultado.partida, {
+            evento: resultado.evento,
+            actorUserId: String(req.user.id)
         });
         res.json({
             ...resultado,
@@ -278,6 +314,10 @@ app.post('/api/partidas/:codigo/reinsertar-bomba', authMiddleware, async (req, r
             userId: req.user.id,
             posicionBomba: req.body?.posicionBomba
         });
+        socketManager.emitirEstadoPartidaPorJugador(resultado.partida, {
+            evento: resultado.evento,
+            actorUserId: String(req.user.id)
+        });
         res.json({
             ...resultado,
             vistaJugador: gameLogic.obtenerVistaJugador(resultado.partida, req.user.id)
@@ -287,7 +327,7 @@ app.post('/api/partidas/:codigo/reinsertar-bomba', authMiddleware, async (req, r
     }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, '0.0.0.0', () => {
     logger.registrarEvento('SERVIDOR_INICIADO', { puerto: PORT });
 });
 
