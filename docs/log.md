@@ -2,6 +2,8 @@
 
 Cronología de eventos verificados en el historial de Git (del más reciente al más antiguo):
 
+- `2026-11-16` · Implementación del PBI-2 del Sprint 2 en `feature/salas-lobby`: gestión de salas de 2 a 4 jugadores (`roomModel.js`, `roomLogic.js`, endpoints `/api/salas*` y 10 pruebas unitarias) · [`backend/logic/roomLogic.js`](../backend/logic/roomLogic.js)
+- `2026-11-16` · Integración del PR `#20` (`fix/deuda-sprint1-y-logger`, commit `a033f1b`): cierre de deuda técnica del Sprint 1, módulo `logger.js`, `GET /api/logs` y planificación del Sprint 2 · [`de5c44c`](https://github.com/Fernan196/proyecto-pis/commit/de5c44c) ([`docs/sprint-2.md`](./sprint-2.md))
 - `2026-11-11` · Cierre del Hito 4 y del Sprint 1 (etiqueta `hito-4`): incorporación del bundle OKF completo en `docs/` y blindaje de seguridad del rol `user` por defecto en el registro público · [`backend/index.js`](../backend/index.js) · [`backend/logic/userLogic.js`](../backend/logic/userLogic.js) · [`docs/index.md`](./index.md)
 - `2026-10-15` · Integración del PR `#18` (`feat/prueba-tecnica-sprint1`, commit `61503ed`) en `origin/main` con validación de dominios permitidos (`variante3`) · [`6021914`](https://github.com/Fernan196/proyecto-pis/commit/6021914)
 - `2026-10-13` · Eliminación de la sección de ejecución en local del `README.md` directamente en `main` (sin PR) · [`9c366fd`](https://github.com/Fernan196/proyecto-pis/commit/9c366fd) ([`README.md`](../README.md))
