@@ -1,6 +1,7 @@
 // backend/logic/gameLogic.js
 const gameModel = require('../data/gameModel');
 const roomModel = require('../data/roomModel');
+const User = require('../data/userModel');
 const roomLogic = require('./roomLogic');
 const logger = require('./logger');
 
@@ -383,6 +384,11 @@ async function robarCarta({ codigoSala, userId, posicionBomba }) {
             await roomModel.actualizarSalaDatos(partida.codigoSala, { estado: 'FINISHED' });
         }
 
+        await User.registrarResultadoPartidaUsuarios({
+            jugadores,
+            ganadorId: ganador.userId
+        });
+
         logger.registrarEvento('PARTIDA_FINALIZADA', {
             codigoSala: partida.codigoSala,
             ganadorId: ganador.userId,
@@ -642,6 +648,47 @@ async function jugarCarta({ codigoSala, userId, tipoCarta, objetivoUserId = null
     };
 }
 
+/**
+ * Recupera la sesión de juego activa de un usuario (partida en curso o sala en espera)
+ * para restaurar su estado tras recargar el navegador.
+ */
+async function obtenerSesionJuegoActiva(userId) {
+    if (!userId) {
+        throw crearErrorHttp('El identificador del usuario es obligatorio', 400);
+    }
+
+    const partida = await gameModel.buscarPartidaActivaPorJugador(userId);
+    if (partida) {
+        const sala = await roomModel.buscarPorCodigo(partida.codigoSala);
+        return {
+            enCurso: true,
+            tipo: 'PARTIDA',
+            codigoSala: partida.codigoSala,
+            sala,
+            vistaJugador: obtenerVistaJugador(partida, userId)
+        };
+    }
+
+    const sala = await roomModel.buscarSalaActivaPorJugador(userId);
+    if (sala && sala.estado === 'WAITING') {
+        return {
+            enCurso: true,
+            tipo: 'SALA',
+            codigoSala: sala.codigo,
+            sala,
+            vistaJugador: null
+        };
+    }
+
+    return {
+        enCurso: false,
+        tipo: null,
+        codigoSala: null,
+        sala: null,
+        vistaJugador: null
+    };
+}
+
 module.exports = {
     CATALOGO_CARTAS,
     TIPOS_GATO,
@@ -652,6 +699,7 @@ module.exports = {
     obtenerPartida,
     obtenerVistaJugador,
     obtenerPartidaVistaJugador,
+    obtenerSesionJuegoActiva,
     avanzarTurno,
     robarCarta,
     reinsertarBomba,

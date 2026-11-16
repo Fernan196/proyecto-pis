@@ -327,6 +327,26 @@ app.post('/api/partidas/:codigo/reinsertar-bomba', authMiddleware, async (req, r
     }
 });
 
+// 12. Reconexión y Ranking de jugadores
+app.get('/api/ranking', authMiddleware, async (req, res) => {
+    try {
+        const limite = Number(req.query.limite) || 10;
+        const ranking = await userLogic.obtenerRanking(limite);
+        res.json(ranking);
+    } catch (error) {
+        res.status(error.statusCode || 500).json({ error: error.message });
+    }
+});
+
+app.get('/api/sesion-juego/activa', authMiddleware, async (req, res) => {
+    try {
+        const sesion = await gameLogic.obtenerSesionJuegoActiva(req.user.id);
+        res.json(sesion);
+    } catch (error) {
+        res.status(error.statusCode || 400).json({ error: error.message });
+    }
+});
+
 server.listen(PORT, '0.0.0.0', () => {
     logger.registrarEvento('SERVIDOR_INICIADO', { puerto: PORT });
 });

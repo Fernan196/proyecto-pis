@@ -131,3 +131,18 @@ export async function reinsertarBomba(codigo, posicionBomba, token) {
         body: JSON.stringify({ posicionBomba })
     }, 'Error al reinsertar el Michi Explosivo');
 }
+
+// Reconexión y Ranking
+export async function obtenerRanking(token) {
+    return requestJson('/ranking', {
+        method: 'GET',
+        headers: authHeaders(token)
+    }, 'Error al obtener el ranking');
+}
+
+export async function obtenerSesionJuegoActiva(token) {
+    return requestJson('/sesion-juego/activa', {
+        method: 'GET',
+        headers: authHeaders(token)
+    }, 'Error al recuperar la sesión de juego');
+}

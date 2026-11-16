@@ -205,11 +205,22 @@ async function marcarSalaEnCurso({ codigo, solicitanteId, partidaId = null }) {
     return actualizada;
 }
 
+/**
+ * Obtiene la sala activa (WAITING o IN_PROGRESS) en la que participa un jugador.
+ */
+async function obtenerSalaActivaJugador(userId) {
+    if (!userId) {
+        throw crearErrorHttp('El identificador del usuario es obligatorio', 400);
+    }
+    return await roomModel.buscarSalaActivaPorJugador(userId);
+}
+
 module.exports = {
     generarCodigoSala,
     crearSala,
     listarSalasDisponibles,
     obtenerSala,
+    obtenerSalaActivaJugador,
     unirseASala,
     salirDeSala,
     marcarSalaEnCurso

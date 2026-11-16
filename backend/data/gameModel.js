@@ -205,6 +205,29 @@ async function eliminarPorCodigoSala(codigoSala) {
 }
 
 /**
+ * Busca la última partida en curso (PLAYING o WAITING_DEFUSE_INSERT) en la que participa un usuario.
+ */
+async function buscarPartidaActivaPorJugador(userId) {
+    const uid = String(userId || '').trim();
+    if (!uid) return null;
+
+    if (usarBaseDeDatos()) {
+        const doc = await Game.findOne({
+            estado: { $in: ['PLAYING', 'WAITING_DEFUSE_INSERT'] },
+            'jugadores.userId': uid
+        }).sort({ updatedAt: -1 });
+        return doc ? doc.toJSON() : null;
+    }
+
+    const partida = Array.from(partidasEnMemoria.values())
+        .reverse()
+        .find(p => ['PLAYING', 'WAITING_DEFUSE_INSERT'].includes(p.estado)
+            && p.jugadores.some(j => String(j.userId) === uid));
+
+    return partida ? clonarPartida(partida) : null;
+}
+
+/**
  * Limpia todas las partidas en el almacén activo (usado en pruebas).
  */
 async function limpiarPartidas() {
@@ -218,6 +241,7 @@ module.exports = {
     Game,
     crearPartidaDatos,
     buscarPorCodigoSala,
+    buscarPartidaActivaPorJugador,
     actualizarPartidaDatos,
     eliminarPorCodigoSala,
     limpiarPartidas
