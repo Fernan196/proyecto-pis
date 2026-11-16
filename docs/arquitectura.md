@@ -18,9 +18,10 @@ El servidor (`backend/`) se organiza en tres capas distribuidas en archivos inde
    - [`backend/logic/authMiddleware.js`](../backend/logic/authMiddleware.js): middleware HTTP que verifica la cabecera `Authorization: Bearer <credencial>` y adjunta `req.user` (devuelve `401` si falta o no es válida).
    - [`backend/logic/adminMiddleware.js`](../backend/logic/adminMiddleware.js): middleware HTTP que comprueba `req.user.rol === 'admin'` (devuelve `403` en caso contrario).
 2. **Capa de lógica de negocio**:
-   - [`backend/logic/userLogic.js`](../backend/logic/userLogic.js): implementa las reglas de dominio (`registrarUsuario`, `loginUsuario`, `confirmarCuenta`, `listarUsuarios`, `comprobarActivo`, `cambiarRolUsuario`, `eliminarUsuario` y `procesarLoginGitHub`).
+   - [`backend/logic/userLogic.js`](../backend/logic/userLogic.js): implementa las reglas de dominio (`registrarUsuario`, `loginUsuario`, `confirmarCuenta`, `listarUsuarios`, `comprobarActivo`, `cambiarRolUsuario`, `eliminarUsuario`, `procesarLoginGitHub` y `comprobarDominioPermitido`).
    - [`backend/logic/mailer.js`](../backend/logic/mailer.js): servicio de envío del correo de activación mediante `nodemailer` (`enviarCorreoConfirmacion`).
-   - [`backend/logic/userLogic.test.js`](../backend/logic/userLogic.test.js): batería de 16 pruebas unitarias automatizadas con Jest sobre `userLogic.js`.
+   - [`backend/logic/logger.js`](../backend/logic/logger.js): módulo de registro estructurado de actividad del sistema (`registrarEvento`, `registrarError`, `obtenerLogs`, `limpiarLogs`).
+   - [`backend/logic/userLogic.test.js`](../backend/logic/userLogic.test.js) y [`backend/logic/logger.test.js`](../backend/logic/logger.test.js): baterías de pruebas unitarias automatizadas con Jest sobre la capa lógica (20 y 4 pruebas respectivamente, 24 en total).
 3. **Capa de acceso a datos**:
    - [`backend/data/userModel.js`](../backend/data/userModel.js): define el esquema `userSchema` (`username`, `email`, `confirmado`, `rol`, `githubId` y credencial con hash) y exporta el modelo `User` de Mongoose, incluyendo la transformación `toJSON` para normalizar `id` y omitir el hash.
 
@@ -55,14 +56,16 @@ La aplicación cliente (`frontend/src/`) separa la interfaz gráfica de la comun
 
 Definidos en [`backend/index.js`](../backend/index.js):
 
-| Método | Ruta | Quién puede invocarlo | Función en `userLogic.js` | Respuesta principal |
+| Método | Ruta | Quién puede invocarlo | Función en `logic/` | Respuesta principal |
 | :--- | :--- | :--- | :--- | :--- |
-| `POST` | `/api/usuarios` | Público (sin sesión) | `registrarUsuario({ username, email, password })` (fuerza `rol: 'user'`) | `201 Created` con `{ mensaje, userId }` o `400` |
-| `POST` | `/api/login` | Público (cuenta confirmada) | `loginUsuario(req.body)` | `200 OK` con credencial JWT y `user`, `403` si no confirmada o `401` |
-| `GET` | `/api/usuarios/confirmar/:token` | Público (enlace de activación) | `confirmarCuenta(req.params.token)` | `302 Redirect` a `/login?confirmed=true` o `/login?error=token_invalido` |
+| `POST` | `/api/usuarios` | Público (sin sesión) | `userLogic.registrarUsuario({ username, email, password })` (fuerza `rol: 'user'`) | `201 Created` con `{ mensaje, userId }` o `400` |
+| `POST` | `/api/login` | Público (cuenta confirmada) | `userLogic.loginUsuario(req.body)` | `200 OK` con credencial JWT y `user`, `403` si no confirmada o `401` |
+| `GET` | `/api/usuarios/confirmar/:token` | Público (enlace de activación) | `userLogic.confirmarCuenta(req.params.token)` | `302 Redirect` a `/login?confirmed=true` o `/login?error=token_invalido` |
 | `GET` | `/api/auth/github` | Público (sin sesión) | *(Redirección en capa API)* | `302 Redirect` a `https://github.com/login/oauth/authorize` |
-| `GET` | `/api/auth/github/callback` | Público (retorno de GitHub) | `procesarLoginGitHub(...)` | `302 Redirect` a `/login` con sesión OAuth o error |
-| `GET` | `/api/usuarios` | Solo `admin` (`authMiddleware` + `adminMiddleware`) | `listarUsuarios()` | `200 OK` con array de usuarios sin hash de clave |
-| `GET` | `/api/usuarios/:id/activo` | Solo `admin` (`authMiddleware` + `adminMiddleware`) | `comprobarActivo(req.params.id)` | `200 OK` con `{ id, email, activo }` o `404` |
-| `PATCH` | `/api/usuarios/:id/rol` | Solo `admin` (`authMiddleware` + `adminMiddleware`) | `cambiarRolUsuario(id, nuevoRol)` | `200 OK` con `{ mensaje, usuario }` o `400` |
-| `DELETE` | `/api/usuarios/:id` | Autenticado (`authMiddleware`): `admin` a cualquiera (salvo último `admin`); `user` solo a sí mismo | `eliminarUsuario({ solicitanteId, solicitanteRol, objetivoId })` | `200 OK` con `{ mensaje }` o `400` / `403` / `404` |
+| `GET` | `/api/auth/github/callback` | Público (retorno de GitHub) | `userLogic.procesarLoginGitHub(...)` | `302 Redirect` a `/login` con sesión OAuth o error |
+| `GET` | `/api/usuarios` | Solo `admin` (`authMiddleware` + `adminMiddleware`) | `userLogic.listarUsuarios()` | `200 OK` con array de usuarios sin hash de clave |
+| `GET` | `/api/usuarios/:id/activo` | Solo `admin` (`authMiddleware` + `adminMiddleware`) | `userLogic.comprobarActivo(req.params.id)` | `200 OK` con `{ id, email, activo }` o `404` |
+| `PATCH` | `/api/usuarios/:id/rol` | Solo `admin` (`authMiddleware` + `adminMiddleware`) | `userLogic.cambiarRolUsuario(id, nuevoRol)` | `200 OK` con `{ mensaje, usuario }` o `400` |
+| `DELETE` | `/api/usuarios/:id` | Autenticado (`authMiddleware`): `admin` a cualquiera (salvo último `admin`); `user` solo a sí mismo | `userLogic.eliminarUsuario({ solicitanteId, solicitanteRol, objetivoId })` | `200 OK` con `{ mensaje }` o `400` / `403` / `404` |
+| `GET` | `/api/logs` | Solo `admin` (`authMiddleware` + `adminMiddleware`) | `logger.obtenerLogs(limite)` | `200 OK` con lista de eventos recientes del sistema |
+| `POST` | `/api/prueba/dominio` | Público (sin sesión) | `userLogic.comprobarDominioPermitido(email)` | `200 OK` con `{ permitido: boolean }` o `400` |

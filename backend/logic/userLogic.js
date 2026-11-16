@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 const { enviarCorreoConfirmacion } = require('./mailer');
+const logger = require('./logger');
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -67,6 +68,12 @@ async function registrarUsuario(params, legacyPassword, legacyRol) {
 
     await enviarCorreoConfirmacion(usuarioGuardado.email, tokenConfirmacion);
 
+    logger.registrarEvento('USUARIO_REGISTRADO', {
+        userId: usuarioGuardado._id.toString(),
+        username: usuarioGuardado.username,
+        rol: usuarioGuardado.rol
+    });
+
     return {
         mensaje: 'Usuario registrado. Por favor, revisa tu correo para activar tu cuenta.',
         userId: usuarioGuardado._id
@@ -105,6 +112,12 @@ async function loginUsuario({ email, password }) {
         { expiresIn: '8h' }
     );
 
+    logger.registrarEvento('LOGIN_EXITOSO', {
+        userId: usuario._id.toString(),
+        rol: usuario.rol,
+        metodo: 'local'
+    });
+
     return {
         token,
         user: {
@@ -126,6 +139,7 @@ async function confirmarCuenta(token) {
 
         usuario.confirmado = true;
         await usuario.save();
+        logger.registrarEvento('CUENTA_CONFIRMADA', { userId: usuario._id.toString() });
         return { yaConfirmado: false };
     } catch (err) {
         throw new Error('Enlace de activación inválido o expirado');
@@ -175,6 +189,11 @@ async function cambiarRolUsuario(id, nuevoRol) {
     usuario.rol = nuevoRol;
     await usuario.save();
 
+    logger.registrarEvento('CAMBIO_ROL', {
+        objetivoId: usuario._id.toString(),
+        nuevoRol
+    });
+
     const resultado = usuario.toObject();
     delete resultado.password;
     return resultado;
@@ -212,6 +231,11 @@ async function eliminarUsuario({ solicitanteId, solicitanteRol, objetivoId }) {
     }
 
     await User.findByIdAndDelete(objetivoId);
+    logger.registrarEvento('USUARIO_ELIMINADO', {
+        solicitanteId: solicitanteId.toString(),
+        solicitanteRol,
+        objetivoId: objetivoId.toString()
+    });
     return { mensaje: 'Cuenta eliminada exitosamente' };
 }
 
@@ -247,6 +271,12 @@ async function procesarLoginGitHub({ githubId, email, username }) {
         process.env.JWT_SECRET,
         { expiresIn: '8h' }
     );
+
+    logger.registrarEvento('LOGIN_OAUTH_GITHUB', {
+        userId: usuario._id.toString(),
+        rol: usuario.rol,
+        metodo: 'github'
+    });
 
     return {
         token,
