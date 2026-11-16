@@ -1,6 +1,6 @@
-# Proyecto PIS — Plataforma SaaS (Sprint 1)
+# Proyecto PIS — Plataforma SaaS y Michis Explosivos Online (Sprint 1 y Sprint 2)
 
-Aplicación web Software as a Service (SaaS) con gestión de usuarios, arquitectura en capas, control de acceso basado en roles (RBAC), autenticación local y federada (OAuth), y despliegue continuo en la nube.
+Aplicación web Software as a Service (SaaS) con gestión de usuarios, arquitectura en capas, control de acceso basado en roles (RBAC), autenticación local y federada (OAuth), juego multijugador en tiempo real (*Michis Explosivos*, de 2 a 4 jugadores con Socket.IO) y despliegue continuo en la nube.
 
 - **URL de Producción (Frontend):** [https://proyecto-pis.vercel.app](https://proyecto-pis.vercel.app)
 - **URL de la API (Backend):** [https://proyecto-pis-814769346481.europe-southwest1.run.app](https://proyecto-pis-814769346481.europe-southwest1.run.app)
@@ -17,6 +17,7 @@ Cada tecnología utilizada en este proyecto ha sido seleccionada de forma justif
 - **MongoDB Atlas**: Base de datos NoSQL distribuida y gestionada en la nube que garantiza la persistencia real de los datos con esquemas adaptables y alta disponibilidad.
 - **Mongoose**: Modelador de objetos (ODM) para MongoDB que asegura la integridad de los datos mediante validaciones de esquema, tipado estricto y abstracción de la capa de persistencia.
 - **React (con Vite)**: Biblioteca declarativa para la construcción de interfaces de usuario interactivas y modulares mediante componentes reutilizables, empaquetada con Vite para compilaciones optimizadas y desarrollo ágil.
+- **Socket.IO (`socket.io` y `socket.io-client`)**: Comunicación bidireccional en tiempo real autenticada con JWT en el *handshake* para sincronizar salas del lobby y turnos de *Michis Explosivos* mediante canales privados por usuario (`user:<userId>`), evitando *polling* continuo y filtraciones de estado oculto.
 - **JSON Web Tokens (JWT)**: Estándar abierto para la emisión y verificación de credenciales de sesión cifradas y sin estado (*stateless*), permitiendo mantener sesiones seguras entre recargas.
 - **Bcrypt**: Función de hash criptográfico unidireccional con *salt* configurable para proteger las contraseñas contra ataques de fuerza bruta y tablas arcoíris.
 - **Nodemailer**: Librería de transporte de correo para la orquestación segura del flujo transaccional de activación de cuentas vía SMTP.
@@ -33,12 +34,12 @@ El proyecto sigue un diseño arquitectónico modular y rigurosamente separado en
 
 ### 2.1. Fronteras entre Capas
 - **Frontend:**
-  - **Capa de Presentación:** Componentes en `frontend/src/` (`login.jsx`, `register.jsx`, `dashboard.jsx`). No manejan URLs de la red ni peticiones `fetch`; únicamente gestionan vistas, estados de interfaz y eventos de usuario.
-  - **Cliente de Comunicación:** Ubicado en `frontend/src/services/api.js`. Encapsula todas las llamadas HTTP contra la API, deserializa respuestas y propaga errores tipados a la interfaz.
+  - **Capa de Presentación:** Componentes en `frontend/src/` (`login.jsx`, `register.jsx`, `dashboard.jsx`, `gameBoard.jsx`, `michiCard.jsx` y `protectedRoutes.jsx`). No manejan URLs de la red ni conexiones directas; únicamente gestionan vistas, modales interactivos, estado de interfaz y eventos de usuario.
+  - **Cliente de Comunicación:** Ubicado en `frontend/src/services/api.js` (cliente HTTP REST) y `frontend/src/services/socket.js` (cliente Socket.IO autenticado con JWT). Encapsulan toda comunicación con el servidor, deserializan respuestas y propagan errores tipados a la interfaz.
 - **Backend:**
-  - **Capa API:** En `backend/index.js`. No ejecuta lógica de negocio ni manipula la base de datos directamente; solo recibe la petición HTTP, ejecuta los middlewares y delega el procesamiento a la lógica de negocio.
-  - **Capa de Lógica de Negocio:** En `backend/logic/userLogic.js`. Centraliza el 100% de las validaciones, generación de tokens, hashes, control de permisos RBAC y reglas del dominio.
-  - **Capa de Acceso a Datos:** En `backend/data/userModel.js`. Define el esquema persistente con Mongoose, tipos de datos e índices únicos.
+  - **Capa API y Tiempo Real:** En `backend/index.js` (endpoints REST) y `backend/logic/socketManager.js` (gestión de salas Socket.IO y emisión segura por usuario). No ejecutan lógica de negocio ni manipulan la base de datos directamente; solo validan credenciales mediante middlewares y delegan el procesamiento en la capa lógica.
+  - **Capa de Lógica de Negocio:** En `backend/logic/` (`userLogic.js`, `roomLogic.js`, `gameLogic.js` y `logger.js`). Centraliza las validaciones, generación de tokens, hashes, control de permisos RBAC, gestión de salas, reglas del motor de *Michis Explosivos*, filtrado de vista por jugador y registro estructurado de actividad.
+  - **Capa de Acceso a Datos:** En `backend/data/` (`userModel.js`, `roomModel.js` y `gameModel.js`). Define los esquemas persistentes en Mongoose, tipos de datos, estadísticas de partidas e índices únicos, con respaldo en memoria para suites de prueba desacopladas.
 
 ---
 
@@ -58,14 +59,22 @@ La especificación del proyecto contempla la libertad de elección tecnológica 
 
 ## 3. Reglas de Negocio y Seguridad Implementadas
 
+### 3.1. Plataforma SaaS, RBAC y Seguridad de Cuentas
 - **Confirmación obligatoria por correo:** Las cuentas registradas localmente se crean con `confirmado: false`. El login rechaza la sesión (`403 Forbidden`) hasta que el usuario activa su cuenta mediante el enlace enviado por Nodemailer.
 - **Autenticación con GitHub (OAuth):** Los usuarios registrados mediante GitHub se activan inmediatamente (`confirmado: true`) según estipula la especificación, obviando el envío de correo de activación redundante.
 - **Control de acceso basado en roles (RBAC):**
-  - `user`: Puede consultar su información y **eliminar exclusivamente su propia cuenta**.
-  - `admin`: Puede **listar todos los usuarios**, **comprobar el estado activo/pendiente**, **promover o degradar roles**, y **eliminar cualquier cuenta**.
+  - `user`: Puede consultar su información, jugar partidas y **eliminar exclusivamente su propia cuenta**.
+  - `admin`: Puede **listar todos los usuarios**, **comprobar el estado activo/pendiente**, **consultar logs de actividad**, **promover o degradar roles** y **eliminar cualquier cuenta**.
 - **Protección del último Administrador:** La capa de lógica impide degradar o eliminar al único administrador existente en el sistema, evitando estados inconsistentes o pérdida de gobernanza.
 - **Seguridad de contraseñas:** Cifradas con `bcrypt` (10 rondas de salt).
-- **Sesión persistente y protegida:** Tokens JWT firmados con caducidad de 8 horas, validados en cada petición mediante `authMiddleware`.
+- **Sesión persistente y protegida:** Tokens JWT firmados con caducidad de 8 horas, validados en cada petición mediante `authMiddleware` y en el *handshake* de Socket.IO.
+
+### 3.2. Juego Multijugador *Michis Explosivos* (2 a 4 jugadores)
+- **Lobby, reconexión y ranking:** Los usuarios autenticados pueden crear o unirse a salas con código de 6 caracteres (de 2 a 4 jugadores), recuperar automáticamente su sala o partida activa tras recargar (`GET /api/sesion-juego/activa`) y consultar el ranking global de victorias y partidas jugadas (`GET /api/ranking`).
+- **Reparto inicial e invariante de bombas:** Cada jugador comienza con **7 cartas del mazo + 1 `DEFUSE` (Puntero Láser)**; tras repartir, el servidor inserta **$N - 1$ cartas `BOMB` (Michi Explosivo)** y baraja el mazo.
+- **Cartas implementadas:** `BOMB` (Michi Explosivo), `DEFUSE` (Puntero Láser con reinserción secreta por índice), `SKIP` (Salto Gatuno), `ATTACK` (Emboscada Felina con acumulación de turnos), `SEE_FUTURE` (Visión Felina de las 3 primeras cartas en privado), `SHUFFLE` (Terremoto en el Arenero), `FAVOR` (Soborno de Atún) y parejas idénticas `CAT_1..4` (Michi Cósmico, Ninja, Pirata y Zombie) para robar 1 carta aleatoria a un rival vivo.
+- **Seguridad antitrampas en servidor:** Todas las resoluciones de cartas, turnos, robos y reinserciones se validan en el backend (`gameLogic.js`). La función `obtenerVistaJugador` oculta el mazo completo y la identidad de las cartas rivales tanto en las respuestas HTTP como en los eventos Socket.IO.
+- **Modales interactivos y guía integrada:** El tablero ofrece modales dedicados para esconder la bomba desactivada con selector de índice, inspeccionar la visión del futuro en privado, elegir rival objetivo, consultar las reglas y el catálogo de cartas SVG, y visualizar el resultado final de la partida.
 
 ---
 
@@ -112,7 +121,7 @@ npm run dev
 
 ## 6. Ejecución de las Pruebas Automatizadas
 
-Las pruebas unitarias automatizadas de la capa de lógica están implementadas con **Jest** (`backend/logic/*.test.js`). Requieren una instancia de MongoDB activa en `MONGODB_URI` (por defecto `mongodb://127.0.0.1:27017/proyecto_pis_test`):
+Las pruebas unitarias automatizadas de la capa de lógica están implementadas con **Jest** (`backend/logic/*.test.js`, actualmente **66 pruebas** repartidas entre `userLogic.test.js`, `logger.test.js`, `roomLogic.test.js`, `gameLogic.test.js` y `socketManager.test.js`) y se ejecutan de forma secuencial (`jest --runInBand`) para evitar colisiones sobre la base de datos. La batería completa requiere una instancia de MongoDB activa en `MONGODB_URI` (por defecto `mongodb://127.0.0.1:27017/proyecto_pis_test`); los módulos `logger`, `roomLogic`, `gameLogic` y `socketManager` cuentan además con respaldo automático en memoria cuando no hay conexión MongoDB activa:
 
 ```bash
 # Desde la raíz del repositorio (comando único):

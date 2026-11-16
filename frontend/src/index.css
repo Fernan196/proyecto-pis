@@ -697,3 +697,218 @@ body {
     border-radius: 0.6rem;
     border-left: 3px solid #6366f1;
 }
+
+/* Modales interactivos del tablero (PBI-8) */
+@keyframes modalFadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(2, 6, 23, 0.78);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.25rem;
+    z-index: 1000;
+    animation: modalFadeIn 0.2s ease-out;
+}
+
+.modal-card {
+    width: 100%;
+    max-width: 560px;
+    max-height: 90vh;
+    overflow-y: auto;
+    background: rgba(15, 23, 42, 0.96);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 1.35rem;
+    padding: 1.5rem;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.55);
+    color: #f8fafc;
+}
+
+.modal-card-wide {
+    max-width: 820px;
+}
+
+.modal-card-defuse {
+    border-color: rgba(16, 185, 129, 0.45);
+    box-shadow: 0 25px 60px rgba(16, 185, 129, 0.16);
+}
+
+.modal-card-future {
+    border-color: rgba(168, 85, 247, 0.45);
+    box-shadow: 0 25px 60px rgba(168, 85, 247, 0.18);
+}
+
+.modal-card-victory {
+    border-color: rgba(245, 158, 11, 0.5);
+    box-shadow: 0 25px 60px rgba(245, 158, 11, 0.2);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.modal-header h3 {
+    font-size: 1.15rem;
+    font-weight: 800;
+    margin-top: 0.2rem;
+}
+
+.modal-close-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #cbd5e1;
+    width: 32px;
+    height: 32px;
+    border-radius: 0.6rem;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-close-btn:hover {
+    background: rgba(255, 255, 255, 0.16);
+    color: #ffffff;
+}
+
+.modal-intro-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.modal-subtitle {
+    font-size: 0.9rem;
+    color: #e2e8f0;
+    line-height: 1.45;
+    margin-bottom: 0.35rem;
+}
+
+.modal-hint {
+    font-size: 0.8rem;
+    color: #94a3b8;
+    line-height: 1.4;
+}
+
+.modal-cards-row {
+    display: flex;
+    justify-content: center;
+    gap: 0.9rem;
+    flex-wrap: wrap;
+    margin: 1rem 0;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-top: 1.25rem;
+}
+
+.defuse-slider-box {
+    background: rgba(30, 41, 59, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 1rem;
+    padding: 1rem;
+}
+
+.range-slider {
+    width: 100%;
+    accent-color: #10b981;
+    cursor: pointer;
+}
+
+.target-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+}
+
+.target-option-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+    padding: 0.85rem 1rem;
+    border-radius: 0.9rem;
+    border: 1px solid rgba(236, 72, 153, 0.35);
+    background: rgba(30, 41, 59, 0.8);
+    color: #f8fafc;
+    cursor: pointer;
+    transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.target-option-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    border-color: #ec4899;
+    background: rgba(236, 72, 153, 0.16);
+}
+
+.target-option-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.victory-trophy {
+    font-size: 3rem;
+    text-align: center;
+    margin-bottom: 0.35rem;
+}
+
+.modal-summary-strip {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+    text-align: center;
+    background: rgba(30, 41, 59, 0.65);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 0.9rem;
+    padding: 0.85rem;
+}
+
+.modal-summary-strip strong {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 0.95rem;
+    color: #fde68a;
+}
+
+.rules-summary-box {
+    background: rgba(30, 41, 59, 0.6);
+    border: 1px solid rgba(99, 102, 241, 0.25);
+    border-radius: 0.9rem;
+    padding: 0.9rem 1rem;
+    margin-bottom: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    font-size: 0.84rem;
+    color: #cbd5e1;
+    line-height: 1.45;
+}
+
+.rules-cards-grid {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem;
+}
