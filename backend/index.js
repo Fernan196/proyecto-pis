@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 
 const userLogic = require('./logic/userLogic');
+const roomLogic = require('./logic/roomLogic');
 const authMiddleware = require('./logic/authMiddleware');
 const adminMiddleware = require('./logic/adminMiddleware');
 const logger = require('./logic/logger');
@@ -151,6 +152,76 @@ app.delete('/api/usuarios/:id', authMiddleware, async (req, res) => {
 app.get('/api/logs', authMiddleware, adminMiddleware, (req, res) => {
     const limite = Number(req.query.limite) || 50;
     res.json(logger.obtenerLogs(limite));
+});
+
+// 10. Gestión de salas (Lobby)
+app.post('/api/salas', authMiddleware, async (req, res) => {
+    try {
+        const sala = await roomLogic.crearSala({
+            hostId: req.user.id,
+            hostUsername: req.user.username || req.user.email,
+            nombre: req.body?.nombre,
+            maxJugadores: req.body?.maxJugadores
+        });
+        res.status(201).json(sala);
+    } catch (error) {
+        res.status(error.statusCode || 400).json({ error: error.message });
+    }
+});
+
+app.get('/api/salas', authMiddleware, async (req, res) => {
+    try {
+        const salas = await roomLogic.listarSalasDisponibles();
+        res.json(salas);
+    } catch (error) {
+        res.status(error.statusCode || 500).json({ error: error.message });
+    }
+});
+
+app.get('/api/salas/:codigo', authMiddleware, async (req, res) => {
+    try {
+        const sala = await roomLogic.obtenerSala(req.params.codigo);
+        res.json(sala);
+    } catch (error) {
+        res.status(error.statusCode || 404).json({ error: error.message });
+    }
+});
+
+app.post('/api/salas/:codigo/unirse', authMiddleware, async (req, res) => {
+    try {
+        const sala = await roomLogic.unirseASala({
+            codigo: req.params.codigo,
+            userId: req.user.id,
+            username: req.user.username || req.user.email
+        });
+        res.json(sala);
+    } catch (error) {
+        res.status(error.statusCode || 400).json({ error: error.message });
+    }
+});
+
+app.post('/api/salas/:codigo/salir', authMiddleware, async (req, res) => {
+    try {
+        const resultado = await roomLogic.salirDeSala({
+            codigo: req.params.codigo,
+            userId: req.user.id
+        });
+        res.json(resultado);
+    } catch (error) {
+        res.status(error.statusCode || 400).json({ error: error.message });
+    }
+});
+
+app.post('/api/salas/:codigo/iniciar', authMiddleware, async (req, res) => {
+    try {
+        const sala = await roomLogic.marcarSalaEnCurso({
+            codigo: req.params.codigo,
+            solicitanteId: req.user.id
+        });
+        res.json(sala);
+    } catch (error) {
+        res.status(error.statusCode || 400).json({ error: error.message });
+    }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
