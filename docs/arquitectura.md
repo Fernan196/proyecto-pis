@@ -35,10 +35,12 @@ El servidor (`backend/`) se organiza en tres capas distribuidas en archivos inde
 La aplicación cliente (`frontend/src/`) separa la interfaz gráfica de la comunicación con el servidor:
 
 1. **Capa de presentación (GUI)**:
-   - [`frontend/src/main.jsx`](../frontend/src/main.jsx) y [`frontend/src/App.jsx`](../frontend/src/App.jsx): punto de entrada y enrutador (`BrowserRouter`) con las rutas `/login`, `/register` y `/dashboard`.
+   - [`frontend/src/main.jsx`](../frontend/src/main.jsx) y [`frontend/src/App.jsx`](../frontend/src/App.jsx): punto de entrada y enrutador (`BrowserRouter`) con las rutas `/`, `/login`, `/register`, `/dashboard` y `/partida/:codigo`.
    - [`frontend/src/login.jsx`](../frontend/src/login.jsx): formulario de acceso local, lectura de parámetros de retorno OAuth/confirmación y botón de redirección a GitHub OAuth.
    - [`frontend/src/register.jsx`](../frontend/src/register.jsx): formulario de registro local con validación de campos en cliente.
-   - [`frontend/src/dashboard.jsx`](../frontend/src/dashboard.jsx): panel de usuario autenticado (cierre de sesión y baja propia) y tabla de administración para el rol `admin` (listado, promoción/degradación de rol y eliminación de cuentas).
+   - [`frontend/src/dashboard.jsx`](../frontend/src/dashboard.jsx): panel de usuario autenticado, Lobby en tiempo real de *Michis Explosivos* (crear/unirse/salir/iniciar sala), aviso de reconexión tras recarga, tabla de Ranking de jugadores y panel de administración para el rol `admin`.
+   - [`frontend/src/gameBoard.jsx`](../frontend/src/gameBoard.jsx): tablero interactivo de partida en `/partida/:codigo` con vista de rivales, mazo con riesgo de bomba, descartes, mano del jugador, controles de `DEFUSE` / `SEE_FUTURE` / objetivo rival e historial lateral.
+   - [`frontend/src/michiCard.jsx`](../frontend/src/michiCard.jsx): componente reutilizable de cartas SVG originales de estilo neón/cartoon (`INFO_CARTAS`).
    - [`frontend/src/protectedRoutes.jsx`](../frontend/src/protectedRoutes.jsx): componente de guarda que redirige a `/login` si no existe credencial de sesión en `localStorage`.
    - Estilos en [`frontend/src/index.css`](../frontend/src/index.css) y [`frontend/src/App.css`](../frontend/src/App.css).
 2. **Cliente de comunicación**:
@@ -48,7 +50,7 @@ La aplicación cliente (`frontend/src/`) separa la interfaz gráfica de la comun
 ## 3. Frontera exacta entre capas
 
 - **Frontera Presentación ↔ Cliente de comunicación (Frontend)**:
-  - Los componentes React (`login.jsx`, `register.jsx`, `dashboard.jsx`) importan las funciones asíncronas de [`frontend/src/services/api.js`](../frontend/src/services/api.js) y reciben objetos JavaScript ya deserializados o excepciones `Error(mensaje)`.
+  - Los componentes React (`login.jsx`, `register.jsx`, `dashboard.jsx`, `gameBoard.jsx`) importan las funciones asíncronas de [`frontend/src/services/api.js`](../frontend/src/services/api.js) y [`frontend/src/services/socket.js`](../frontend/src/services/socket.js) y reciben objetos JavaScript ya deserializados o excepciones `Error(mensaje)`.
   - **Excepción detectada en el código**: en [`frontend/src/login.jsx`](../frontend/src/login.jsx) (líneas 53-55), `handleGithubLogin` asigna `window.location.href` directamente hacia la URL de `/api/auth/github` del backend en lugar de obtenerla desde `services/api.js`.
 - **Frontera Cliente ↔ Servidor**:
   - Cliente y servidor se despliegan en orígenes distintos (Vercel y Google Cloud Run) y se comunican únicamente mediante peticiones HTTP/JSON y redirecciones OAuth/confirmación con políticas CORS en [`backend/index.js`](../backend/index.js) (línea 14). El backend no sirve los archivos estáticos del frontend (véase `ARQ-01` en [`requisitos.md`](./requisitos.md)).
