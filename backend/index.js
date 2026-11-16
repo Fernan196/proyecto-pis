@@ -6,6 +6,7 @@ const cors = require('cors');
 const userLogic = require('./logic/userLogic');
 const authMiddleware = require('./logic/authMiddleware');
 const adminMiddleware = require('./logic/adminMiddleware');
+const logger = require('./logic/logger');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -15,8 +16,8 @@ app.use(cors({ origin: FRONTEND_URL, credentials: true }));
 app.use(express.json());
 
 mongoose.connect(process.env.MONGODB_URI)
-    .then(() => console.log('✅ Conectado a MongoDB Atlas'))
-    .catch(err => console.error('❌ Error MongoDB:', err));
+    .then(() => logger.registrarEvento('DB_CONECTADA', { motor: 'MongoDB Atlas' }))
+    .catch(err => logger.registrarError('DB_ERROR_CONEXION', err));
 
 // 1. Registro
 app.post('/api/usuarios', async (req, res) => {
@@ -97,7 +98,7 @@ app.get('/api/auth/github/callback', async (req, res) => {
 
         return res.redirect(`${FRONTEND_URL}/login?oauth_token=${token}&user=${encodeURIComponent(JSON.stringify(user))}`);
     } catch (err) {
-        console.error('Error OAuth:', err);
+        logger.registrarError('OAUTH_GITHUB_ERROR', err);
         return res.redirect(`${FRONTEND_URL}/login?error=oauth_error`);
     }
 });
@@ -146,8 +147,14 @@ app.delete('/api/usuarios/:id', authMiddleware, async (req, res) => {
     }
 });
 
+// 9. Consultar registro de actividad (solo admin)
+app.get('/api/logs', authMiddleware, adminMiddleware, (req, res) => {
+    const limite = Number(req.query.limite) || 50;
+    res.json(logger.obtenerLogs(limite));
+});
+
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Servidor ejecutándose en puerto ${PORT}`);
+    logger.registrarEvento('SERVIDOR_INICIADO', { puerto: PORT });
 });
 
 // Endpoint público para prueba de evaluación

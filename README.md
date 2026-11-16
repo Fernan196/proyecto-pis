@@ -83,6 +83,51 @@ El proyecto no almacena ningún secreto en el repositorio. Para ejecutar el ento
 | `GITHUB_CLIENT_ID` | Identificador público de la aplicación OAuth en GitHub |
 | `GITHUB_CLIENT_SECRET` | Clave secreta de la aplicación OAuth en GitHub |
 | `FRONTEND_URL` | URL de origen permitida para CORS y redirecciones OAuth |
+| `ALLOWED_DOMAINS` | Lista separada por comas de dominios de correo permitidos en el registro (opcional) |
 
 ---
+
+## 5. Ejecución en Local
+
+### Prerrequisitos
+- Node.js v20 o superior y `npm`.
+- Una instancia de MongoDB accesible (local en `mongodb://127.0.0.1:27017` o MongoDB Atlas).
+
+### 1. Configurar y arrancar el Backend
+```bash
+cd backend
+npm install
+cp .env.example .env   # Completa los valores reales sin subirlos al repositorio
+npm start
+```
+
+### 2. Configurar y arrancar el Frontend
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+---
+
+## 6. Ejecución de las Pruebas Automatizadas
+
+Las pruebas unitarias automatizadas de la capa de lógica están implementadas con **Jest** (`backend/logic/*.test.js`). Requieren una instancia de MongoDB activa en `MONGODB_URI` (por defecto `mongodb://127.0.0.1:27017/proyecto_pis_test`):
+
+```bash
+# Desde la raíz del repositorio (comando único):
+npm test
+
+# O directamente desde el directorio backend/:
+cd backend
+npm test
+```
+
+---
+
+## 7. Creación y Acceso como Administrador
+
+- **Primer administrador**: Por seguridad, el registro público (`POST /api/usuarios`) asigna siempre el rol `user`. El primer administrador se crea mediante promoción manual en la colección `users` de la base de datos cambiando su campo `rol` de `"user"` a `"admin"`.
+- **Gestión de roles**: Una vez autenticado como `admin`, desde el panel (`/dashboard`) o mediante `PATCH /api/usuarios/:id/rol` puede promover a otros usuarios a `admin` o degradarlos a `user`. La capa lógica impide eliminar o degradar al único administrador existente para evitar que el sistema quede sin gobierno.
+- **Credenciales para revisión**: Por seguridad no se publican contraseñas ni cuentas de prueba en el repositorio; las credenciales de acceso como administrador se facilitan por separado junto con la entrega.
 
