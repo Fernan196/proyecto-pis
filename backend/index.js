@@ -5,6 +5,7 @@ const cors = require('cors');
 
 const userLogic = require('./logic/userLogic');
 const roomLogic = require('./logic/roomLogic');
+const gameLogic = require('./logic/gameLogic');
 const authMiddleware = require('./logic/authMiddleware');
 const adminMiddleware = require('./logic/adminMiddleware');
 const logger = require('./logic/logger');
@@ -214,11 +215,47 @@ app.post('/api/salas/:codigo/salir', authMiddleware, async (req, res) => {
 
 app.post('/api/salas/:codigo/iniciar', authMiddleware, async (req, res) => {
     try {
-        const sala = await roomLogic.marcarSalaEnCurso({
-            codigo: req.params.codigo,
+        const resultado = await gameLogic.iniciarPartidaDesdeSala({
+            codigoSala: req.params.codigo,
             solicitanteId: req.user.id
         });
-        res.json(sala);
+        res.json(resultado);
+    } catch (error) {
+        res.status(error.statusCode || 400).json({ error: error.message });
+    }
+});
+
+// 11. Motor de juego (Partidas)
+app.get('/api/partidas/:codigo', authMiddleware, async (req, res) => {
+    try {
+        const partida = await gameLogic.obtenerPartida(req.params.codigo);
+        res.json(partida);
+    } catch (error) {
+        res.status(error.statusCode || 404).json({ error: error.message });
+    }
+});
+
+app.post('/api/partidas/:codigo/robar', authMiddleware, async (req, res) => {
+    try {
+        const resultado = await gameLogic.robarCarta({
+            codigoSala: req.params.codigo,
+            userId: req.user.id,
+            posicionBomba: req.body?.posicionBomba
+        });
+        res.json(resultado);
+    } catch (error) {
+        res.status(error.statusCode || 400).json({ error: error.message });
+    }
+});
+
+app.post('/api/partidas/:codigo/reinsertar-bomba', authMiddleware, async (req, res) => {
+    try {
+        const resultado = await gameLogic.reinsertarBomba({
+            codigoSala: req.params.codigo,
+            userId: req.user.id,
+            posicionBomba: req.body?.posicionBomba
+        });
+        res.json(resultado);
     } catch (error) {
         res.status(error.statusCode || 400).json({ error: error.message });
     }
