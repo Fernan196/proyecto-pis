@@ -34,7 +34,7 @@ El proyecto sigue un diseño arquitectónico modular y rigurosamente separado en
 
 ### 2.1. Fronteras entre Capas
 - **Frontend:**
-  - **Capa de Presentación:** Componentes en `frontend/src/` (`login.jsx`, `register.jsx`, `dashboard.jsx`, `gameBoard.jsx`, `michiCard.jsx` y `protectedRoutes.jsx`). No manejan URLs de la red ni conexiones directas; únicamente gestionan vistas, modales interactivos, estado de interfaz y eventos de usuario.
+  - **Capa de Presentación:** Componentes en `frontend/src/` (`home.jsx`, `login.jsx`, `register.jsx`, `dashboard.jsx`, `gameBoard.jsx`, `michiCard.jsx` y `protectedRoutes.jsx`). No manejan URLs de la red ni conexiones directas; únicamente gestionan vistas, modales interactivos, estado de interfaz y eventos de usuario.
   - **Cliente de Comunicación:** Ubicado en `frontend/src/services/api.js` (cliente HTTP REST) y `frontend/src/services/socket.js` (cliente Socket.IO autenticado con JWT). Encapsulan toda comunicación con el servidor, deserializan respuestas y propagan errores tipados a la interfaz.
 - **Backend:**
   - **Capa API y Composición:** En `backend/index.js` (endpoints REST y raíz de composición donde se inyectan el repositorio de datos, `mailer`, `googleAuth` y `logger` hacia la lógica) y `backend/logic/socketManager.js` (gestión de salas Socket.IO, canal `lobby` y emisión segura por usuario). No ejecutan lógica de negocio ni manipulan la base de datos directamente.

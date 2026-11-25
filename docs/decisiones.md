@@ -120,3 +120,9 @@ timestamp: 2026-11-25
 - **Qué se decidió**: Suscribir automáticamente cada socket autenticado al canal `'lobby'` en [`backend/logic/socketManager.js`](../backend/logic/socketManager.js), emitir el evento `lobby:updated` con la lista actualizada de salas `WAITING` desde [`backend/index.js`](../backend/index.js) al crear, unirse, salir o iniciar una sala, escuchar `lobby:updated` en [`frontend/src/dashboard.jsx`](../frontend/src/dashboard.jsx) (re-suscribiendo además ante reconexiones `connect`) y eliminar el botón manual `↻ Actualizar salas`.
 - **Por qué**: Al actualizarse automáticamente la lista de salas disponibles en tiempo real para todos los usuarios conectados al Lobby, deja de ser necesario el botón manual de actualización.
 - **Estado**: Vigente.
+
+## D-20: Página de Inicio pública en `/` (Landing) y retirada de la barra global sin estilos de `App.jsx`
+
+- **Qué se decidió**: Eliminar el `<nav>` global sin estilos de [`frontend/src/App.jsx`](../frontend/src/App.jsx) (que mostraba `Iniciar Sesión`, `Registrarse` y `Lobby` en todas las vistas), servir la nueva Landing Page [`frontend/src/home.jsx`](../frontend/src/home.jsx) en `/` mostrando **"Ir al Lobby"** cuando ya hay sesión iniciada en lugar de redirigir automáticamente, y rediseñar [`frontend/src/login.jsx`](../frontend/src/login.jsx) y [`frontend/src/register.jsx`](../frontend/src/register.jsx) con cabecera corporativa de *Michis Explosivos*, navegación semántica, soporte completo de `autocomplete`/validación `:user-invalid` e indicador visual de fortaleza de contraseña.
+- **Por qué**: Eliminar los enlaces sin formato visibles en todas las rutas (incluido *Lobby* sin iniciar sesión), ofrecer una portada clara del juego que también pueda visitarse con sesión iniciada y unificar la estética y usabilidad de acceso y registro.
+- **Estado**: Vigente.
