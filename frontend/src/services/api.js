@@ -18,6 +18,14 @@ function authHeaders(token, withJson = false) {
     return headers;
 }
 
+export function getGithubAuthUrl() {
+    return `${API_URL}/auth/github`;
+}
+
+export function getGoogleAuthUrl() {
+    return `${API_URL}/auth/google`;
+}
+
 export async function login(email, password) {
     return requestJson('/login', {
         method: 'POST',

@@ -340,7 +340,7 @@ describe('Pruebas Unitarias de la Capa Lógica (userLogic)', () => {
     // ==========================================
     // 5. CAMBIO DE ROLES, ESTADO ACTIVO Y OAUTH
     // ==========================================
-    describe('Gestión de roles, estado activo y OAuth GitHub', () => {
+    describe('Gestión de roles, estado activo y OAuth (GitHub y Google)', () => {
 
         test('Debe permitir promover un usuario normal a administrador', async () => {
             const user = await User.crearUsuarioDatos({
@@ -396,6 +396,52 @@ describe('Pruebas Unitarias de la Capa Lógica (userLogic)', () => {
 
             const guardado = await User.buscarPorId(res.user.id);
             expect(guardado.confirmado).toBe(true);
+        });
+
+        test('procesarLoginGoogle crea usuario confirmado con rol user y googleId sin enviar correo', async () => {
+            const res = await userLogic.procesarLoginGoogle({
+                googleId: 'g-12345',
+                email: 'nuevo.google@test.com',
+                username: 'Jugador Google'
+            });
+
+            expect(res).toHaveProperty('token');
+            expect(res.user.email).toBe('nuevo.google@test.com');
+            expect(res.user.rol).toBe('user');
+            expect(mailerDouble.enviarCorreoConfirmacion).not.toHaveBeenCalled();
+
+            const guardado = await User.buscarPorId(res.user.id);
+            expect(guardado.confirmado).toBe(true);
+            expect(guardado.googleId).toBe('g-12345');
+        });
+
+        test('procesarLoginGoogle vincula googleId y activa cuenta local pendiente existente', async () => {
+            const reg = await userLogic.registrarUsuario({
+                username: 'pendiente_google',
+                email: 'local@test.com',
+                password: 'password123'
+            });
+
+            const res = await userLogic.procesarLoginGoogle({
+                googleId: 'g-999',
+                email: 'local@test.com',
+                username: 'Local Google'
+            });
+
+            expect(res.user.id).toBe(reg.userId);
+            const actualizado = await User.buscarPorId(reg.userId);
+            expect(actualizado.confirmado).toBe(true);
+            expect(actualizado.googleId).toBe('g-999');
+        });
+
+        test('Error: procesarLoginGoogle rechaza perfiles sin correo electrónico', async () => {
+            await expect(
+                userLogic.procesarLoginGoogle({
+                    googleId: 'g-000',
+                    email: null,
+                    username: 'Sin Correo'
+                })
+            ).rejects.toThrow('El perfil de Google no proporciona un correo electrónico');
         });
     });
 });

@@ -32,6 +32,10 @@ const userSchema = new mongoose.Schema({
         type: String,
         default: null
     },
+    googleId: {
+        type: String,
+        default: null
+    },
     partidasJugadas: {
         type: Number,
         default: 0,
@@ -78,6 +82,7 @@ function normalizarUsuario(docOrObj, { incluirPassword = false } = {}) {
         confirmado: Boolean(plain.confirmado),
         rol: plain.rol || 'user',
         githubId: plain.githubId ?? null,
+        googleId: plain.googleId ?? null,
         partidasJugadas: plain.partidasJugadas ?? 0,
         partidasGanadas: plain.partidasGanadas ?? 0,
         createdAt: plain.createdAt,
@@ -128,6 +133,7 @@ User.crearUsuarioDatos = async function (datos) {
         confirmado: Boolean(datos.confirmado),
         rol: datos.rol || 'user',
         githubId: datos.githubId ?? null,
+        googleId: datos.googleId ?? null,
         partidasJugadas: datos.partidasJugadas ?? 0,
         partidasGanadas: datos.partidasGanadas ?? 0,
         createdAt: ahora,

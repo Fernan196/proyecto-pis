@@ -35,6 +35,14 @@ function autenticarSocketMiddleware(socket, next) {
 }
 
 /**
+ * Emite la lista actualizada de salas abiertas a todos los clientes conectados al Lobby.
+ */
+function emitirActualizacionLobby(salas) {
+    if (!ioInstance || !Array.isArray(salas)) return;
+    ioInstance.to('lobby').emit('lobby:updated', salas);
+}
+
+/**
  * Emite una actualización de sala del lobby a todos los clientes suscritos a la sala.
  */
 function emitirActualizacionSala(codigoSala, sala) {
@@ -88,6 +96,7 @@ function configurarSocketIO(io) {
     io.on('connection', (socket) => {
         const userId = String(socket.user.id);
         socket.join(`user:${userId}`);
+        socket.join('lobby');
         logger.registrarEvento('SOCKET_CONECTADO', { userId });
 
         socket.on('room:subscribe', async (payload = {}, ack) => {
@@ -206,6 +215,7 @@ function configurarSocketIO(io) {
 module.exports = {
     autenticarSocketMiddleware,
     configurarSocketIO,
+    emitirActualizacionLobby,
     emitirActualizacionSala,
     emitirSalaEliminada,
     emitirEstadoPartidaPorJugador,

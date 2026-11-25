@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     obtenerUsuarios,
@@ -36,7 +36,12 @@ export default function Dashboard() {
     const [lobbyError, setLobbyError] = useState('');
     const [lobbyLoading, setLobbyLoading] = useState(false);
 
+    const salaActivaRef = useRef(null);
     const navigate = useNavigate();
+
+    useEffect(() => {
+        salaActivaRef.current = salaActiva;
+    }, [salaActiva]);
 
     const cargarLobbyYRanking = useCallback(async (token) => {
         const [salasRes, rankingRes, sesionRes] = await Promise.allSettled([
@@ -103,14 +108,31 @@ export default function Dashboard() {
             }
         };
 
+        const onLobbyUpdated = (salasActualizadas) => {
+            if (Array.isArray(salasActualizadas)) {
+                setSalas(salasActualizadas);
+            }
+        };
+
+        const onReconnect = () => {
+            obtenerSalas(token).then(setSalas).catch(() => {});
+            if (salaActivaRef.current?.codigo) {
+                suscribirSalaSocket(salaActivaRef.current.codigo);
+            }
+        };
+
         socket?.on('room:updated', onRoomUpdated);
         socket?.on('room:deleted', onRoomDeleted);
         socket?.on('game:state', onGameState);
+        socket?.on('lobby:updated', onLobbyUpdated);
+        socket?.on('connect', onReconnect);
 
         return () => {
             socket?.off('room:updated', onRoomUpdated);
             socket?.off('room:deleted', onRoomDeleted);
             socket?.off('game:state', onGameState);
+            socket?.off('lobby:updated', onLobbyUpdated);
+            socket?.off('connect', onReconnect);
         };
     }, [navigate, cargarLobbyYRanking]);
 
@@ -239,17 +261,6 @@ export default function Dashboard() {
         }
     };
 
-    const handleActualizarSalas = async () => {
-        const token = localStorage.getItem('token');
-        setLobbyError('');
-        try {
-            const lista = await obtenerSalas(token);
-            setSalas(lista);
-        } catch (err) {
-            setLobbyError(err.message);
-        }
-    };
-
     const currentUserId = String(user?.id || user?._id || '');
     const esHostSalaActiva = Boolean(salaActiva && String(salaActiva.hostId) === currentUserId);
 
@@ -336,19 +347,9 @@ export default function Dashboard() {
                         <div>
                             <h3 style={{ fontSize: '1.15rem', fontWeight: 700 }}>Lobby — Michis Explosivos (2 a 4 jugadores)</h3>
                             <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.2rem' }}>
-                                Salas en tiempo real sincronizadas con Socket.IO
+                                Salas en tiempo real sincronizadas automáticamente con Socket.IO
                             </p>
                         </div>
-                        {!salaActiva && (
-                            <button
-                                type="button"
-                                onClick={handleActualizarSalas}
-                                className="btn-action"
-                                style={{ background: 'rgba(99, 102, 241, 0.2)', color: '#a5b4fc', borderColor: 'rgba(99,102,241,0.4)' }}
-                            >
-                                ↻ Actualizar salas
-                            </button>
-                        )}
                     </div>
 
                     {salaActiva ? (
