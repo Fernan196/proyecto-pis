@@ -108,3 +108,15 @@ timestamp: 2026-11-25
 - **Qué se decidió**: Mover el servicio de correo desde `backend/logic/mailer.js` a [`backend/services/mailer.js`](../backend/services/mailer.js) con la fábrica `createMailer({ transporter, emailUser, emailPass, backendUrl })`, sustituir la URL fija de activación por la variable de entorno `BACKEND_URL` y rediseñar el correo con remitente `"Michis Explosivos"`, asunto `"Activa tu cuenta en Michis Explosivos"`, saludo personalizado con `username`, HTML *responsive* con la paleta oscura/neón del juego, texto plano alternativo (`text`) y aviso de caducidad de 1 hora.
 - **Por qué**: Separar los adaptadores de servicios externos de la capa lógica, hacer la URL de confirmación más real y segura entre entornos mediante configuración externa, y mantener coherencia visual y de marca entre la aplicación y el correo.
 - **Estado**: Vigente.
+
+## D-18: Autenticación con Google OAuth 2.0 mediante adaptador en `backend/services/googleAuth.js`
+
+- **Qué se decidió**: Implementar el inicio de sesión y registro con **Google OAuth 2.0** (*Authorization Code*) mediante la fábrica `createGoogleAuth` en [`backend/services/googleAuth.js`](../backend/services/googleAuth.js) inyectada desde [`backend/index.js`](../backend/index.js), añadiendo las rutas `GET /api/auth/google` y `GET /api/auth/google/callback` con `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` y `${BACKEND_URL}/api/auth/google/callback`, el campo `googleId` en [`backend/data/userModel.js`](../backend/data/userModel.js), `procesarLoginGoogle` en [`backend/logic/userLogic.js`](../backend/logic/userLogic.js) y los botones **"Continuar con Google"** en [`frontend/src/login.jsx`](../frontend/src/login.jsx) y [`frontend/src/register.jsx`](../frontend/src/register.jsx) consumiendo la URL desde [`frontend/src/services/api.js`](../frontend/src/services/api.js).
+- **Por qué**: Permitir acceder y registrarse directamente con una cuenta de Google sin crear contraseña manual, manteniendo el adaptador HTTP externo aislado en `backend/services/` para probarlo con dobles sin llamadas reales.
+- **Estado**: Vigente.
+
+## D-19: Sincronización en tiempo real de la lista de salas del Lobby (`lobby:updated`)
+
+- **Qué se decidió**: Suscribir automáticamente cada socket autenticado al canal `'lobby'` en [`backend/logic/socketManager.js`](../backend/logic/socketManager.js), emitir el evento `lobby:updated` con la lista actualizada de salas `WAITING` desde [`backend/index.js`](../backend/index.js) al crear, unirse, salir o iniciar una sala, escuchar `lobby:updated` en [`frontend/src/dashboard.jsx`](../frontend/src/dashboard.jsx) (re-suscribiendo además ante reconexiones `connect`) y eliminar el botón manual `↻ Actualizar salas`.
+- **Por qué**: Al actualizarse automáticamente la lista de salas disponibles en tiempo real para todos los usuarios conectados al Lobby, deja de ser necesario el botón manual de actualización.
+- **Estado**: Vigente.
