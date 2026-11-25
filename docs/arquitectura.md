@@ -37,9 +37,10 @@ El servidor (`backend/`) se organiza en tres capas distribuidas en archivos inde
 La aplicación cliente (`frontend/src/`) separa la interfaz gráfica de la comunicación con el servidor:
 
 1. **Capa de presentación (GUI)**:
-   - [`frontend/src/main.jsx`](../frontend/src/main.jsx) y [`frontend/src/App.jsx`](../frontend/src/App.jsx): punto de entrada y enrutador (`BrowserRouter`) con las rutas `/`, `/login`, `/register`, `/dashboard` y `/partida/:codigo`.
-   - [`frontend/src/login.jsx`](../frontend/src/login.jsx): formulario de acceso local, lectura de parámetros de retorno OAuth/confirmación y botones de redirección a Google y GitHub OAuth.
-   - [`frontend/src/register.jsx`](../frontend/src/register.jsx): formulario de registro local con validación de campos en cliente y accesos directos de OAuth con Google y GitHub.
+   - [`frontend/src/main.jsx`](../frontend/src/main.jsx) y [`frontend/src/App.jsx`](../frontend/src/App.jsx): punto de entrada y enrutador (`BrowserRouter`) sin barra global sin estilos, con las rutas `/`, `/login`, `/register`, `/dashboard`, `/partida/:codigo` y vista `404` dedicada.
+   - [`frontend/src/home.jsx`](../frontend/src/home.jsx): página de inicio pública (Landing) con cabecera semántica, presentación de cartas SVG y explicación en 3 pasos; muestra *Iniciar sesión* / *Crear cuenta* a visitantes y *Ir al Lobby* a usuarios con sesión activa.
+   - [`frontend/src/login.jsx`](../frontend/src/login.jsx): formulario de acceso local con cabecera de marca, validación tras interacción, soporte completo de `autocomplete`, lectura de retorno OAuth/confirmación y accesos a Google y GitHub OAuth.
+   - [`frontend/src/register.jsx`](../frontend/src/register.jsx): formulario de registro local con cabecera unificada, validación en cliente, indicador visual de fortaleza de contraseña y coincidencia, y accesos directos de OAuth con Google y GitHub.
    - [`frontend/src/dashboard.jsx`](../frontend/src/dashboard.jsx): panel de usuario autenticado, Lobby en tiempo real de *Michis Explosivos* (crear/unirse/salir/iniciar sala), aviso de reconexión tras recarga, tabla de Ranking de jugadores y panel de administración para el rol `admin`.
    - [`frontend/src/gameBoard.jsx`](../frontend/src/gameBoard.jsx): tablero interactivo de partida en `/partida/:codigo` con vista de rivales, mazo con riesgo de bomba, descartes, mano del jugador, controles de `DEFUSE` / `SEE_FUTURE` / objetivo rival e historial lateral.
    - [`frontend/src/michiCard.jsx`](../frontend/src/michiCard.jsx): componente reutilizable de cartas SVG originales de estilo neón/cartoon (`INFO_CARTAS`).
