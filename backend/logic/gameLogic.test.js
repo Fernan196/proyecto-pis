@@ -5,7 +5,14 @@ const gameModel = require('../data/gameModel');
 const roomLogic = require('./roomLogic');
 const roomModel = require('../data/roomModel');
 const User = require('../data/userModel');
-const userLogic = require('./userLogic');
+const { createUserLogic } = require('./userLogic');
+const logger = require('./logger');
+
+const userLogic = createUserLogic({
+    userRepo: User,
+    mailer: { enviarCorreoConfirmacion: jest.fn().mockResolvedValue(true) },
+    logger
+});
 
 function puertoMongoDisponible(host = '127.0.0.1', port = 27017) {
     return new Promise((resolve) => {

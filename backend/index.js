@@ -5,7 +5,9 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const { Server } = require('socket.io');
 
-const userLogic = require('./logic/userLogic');
+const userRepo = require('./data/userModel');
+const { createMailer } = require('./services/mailer');
+const { createUserLogic } = require('./logic/userLogic');
 const roomLogic = require('./logic/roomLogic');
 const gameLogic = require('./logic/gameLogic');
 const socketManager = require('./logic/socketManager');
@@ -17,6 +19,14 @@ const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 8080;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://proyecto-pis.vercel.app';
+const BACKEND_URL = process.env.BACKEND_URL || `http://localhost:${PORT}`;
+
+const mailer = createMailer({
+    emailUser: process.env.EMAIL_USER,
+    emailPass: process.env.EMAIL_PASS,
+    backendUrl: BACKEND_URL
+});
+const userLogic = createUserLogic({ userRepo, mailer, logger });
 
 const io = new Server(server, {
     cors: { origin: FRONTEND_URL, credentials: true }
@@ -349,15 +359,4 @@ app.get('/api/sesion-juego/activa', authMiddleware, async (req, res) => {
 
 server.listen(PORT, '0.0.0.0', () => {
     logger.registrarEvento('SERVIDOR_INICIADO', { puerto: PORT });
-});
-
-// Endpoint público para prueba de evaluación
-app.post('/api/prueba/dominio', (req, res) => {
-    try {
-        const { email } = req.body || {};
-        const resultado = userLogic.comprobarDominioPermitido(email);
-        return res.status(200).json(resultado);
-    } catch (error) {
-        return res.status(error.statusCode || 400).json({ error: error.message });
-    }
 });

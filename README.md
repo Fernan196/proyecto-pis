@@ -37,9 +37,10 @@ El proyecto sigue un diseño arquitectónico modular y rigurosamente separado en
   - **Capa de Presentación:** Componentes en `frontend/src/` (`login.jsx`, `register.jsx`, `dashboard.jsx`, `gameBoard.jsx`, `michiCard.jsx` y `protectedRoutes.jsx`). No manejan URLs de la red ni conexiones directas; únicamente gestionan vistas, modales interactivos, estado de interfaz y eventos de usuario.
   - **Cliente de Comunicación:** Ubicado en `frontend/src/services/api.js` (cliente HTTP REST) y `frontend/src/services/socket.js` (cliente Socket.IO autenticado con JWT). Encapsulan toda comunicación con el servidor, deserializan respuestas y propagan errores tipados a la interfaz.
 - **Backend:**
-  - **Capa API y Tiempo Real:** En `backend/index.js` (endpoints REST) y `backend/logic/socketManager.js` (gestión de salas Socket.IO y emisión segura por usuario). No ejecutan lógica de negocio ni manipulan la base de datos directamente; solo validan credenciales mediante middlewares y delegan el procesamiento en la capa lógica.
-  - **Capa de Lógica de Negocio:** En `backend/logic/` (`userLogic.js`, `roomLogic.js`, `gameLogic.js` y `logger.js`). Centraliza las validaciones, generación de tokens, hashes, control de permisos RBAC, gestión de salas, reglas del motor de *Michis Explosivos*, filtrado de vista por jugador y registro estructurado de actividad.
-  - **Capa de Acceso a Datos:** En `backend/data/` (`userModel.js`, `roomModel.js` y `gameModel.js`). Define los esquemas persistentes en Mongoose, tipos de datos, estadísticas de partidas e índices únicos, con respaldo en memoria para suites de prueba desacopladas.
+  - **Capa API y Composición:** En `backend/index.js` (endpoints REST y raíz de composición donde se inyectan el repositorio de datos, `mailer` y `logger` hacia la lógica) y `backend/logic/socketManager.js` (gestión de salas Socket.IO y emisión segura por usuario). No ejecutan lógica de negocio ni manipulan la base de datos directamente.
+  - **Capa de Servicios Externos:** En `backend/services/mailer.js`. Encapsula el transporte SMTP (`nodemailer`) y la plantilla corporativa de correo de activación sin exponer detalles externos a la capa lógica.
+  - **Capa de Lógica de Negocio:** En `backend/logic/` (`userLogic.js` mediante `createUserLogic`, `roomLogic.js`, `gameLogic.js` y `logger.js`). Centraliza las validaciones, generación de tokens, hashes, control de permisos RBAC, gestión de salas, reglas del motor de *Michis Explosivos*, filtrado de vista por jugador y registro estructurado de actividad, sin importar Mongoose ni proveedores externos.
+  - **Capa de Acceso a Datos:** En `backend/data/` (`userModel.js`, `roomModel.js` y `gameModel.js`). Define los esquemas persistentes en Mongoose, tipos de datos, estadísticas de partidas e índices únicos, exponiendo funciones de repositorio con respaldo automático en memoria para pruebas desacopladas.
 
 ---
 
@@ -92,7 +93,7 @@ El proyecto no almacena ningún secreto en el repositorio. Para ejecutar el ento
 | `GITHUB_CLIENT_ID` | Identificador público de la aplicación OAuth en GitHub |
 | `GITHUB_CLIENT_SECRET` | Clave secreta de la aplicación OAuth en GitHub |
 | `FRONTEND_URL` | URL de origen permitida para CORS y redirecciones OAuth |
-| `ALLOWED_DOMAINS` | Lista separada por comas de dominios de correo permitidos en el registro (opcional) |
+| `BACKEND_URL` | URL base del servidor utilizada para generar los enlaces de confirmación de cuenta |
 
 ---
 
@@ -121,7 +122,7 @@ npm run dev
 
 ## 6. Ejecución de las Pruebas Automatizadas
 
-Las pruebas unitarias automatizadas de la capa de lógica están implementadas con **Jest** (`backend/logic/*.test.js`, actualmente **66 pruebas** repartidas entre `userLogic.test.js`, `logger.test.js`, `roomLogic.test.js`, `gameLogic.test.js` y `socketManager.test.js`) y se ejecutan de forma secuencial (`jest --runInBand`) para evitar colisiones sobre la base de datos. La batería completa requiere una instancia de MongoDB activa en `MONGODB_URI` (por defecto `mongodb://127.0.0.1:27017/proyecto_pis_test`); los módulos `logger`, `roomLogic`, `gameLogic` y `socketManager` cuentan además con respaldo automático en memoria cuando no hay conexión MongoDB activa:
+Las pruebas unitarias automatizadas están implementadas con **Jest** (`backend/logic/*.test.js` y `backend/services/*.test.js`, actualmente **68 pruebas** repartidas entre `userLogic.test.js`, `mailer.test.js`, `logger.test.js`, `roomLogic.test.js`, `gameLogic.test.js` y `socketManager.test.js`) y se ejecutan de forma secuencial (`jest --runInBand`) para evitar colisiones sobre la base de datos. Todas las suites cuentan con respaldo automático en memoria y dobles para servicios externos cuando no hay conexión MongoDB activa en local, y en CI se ejecutan además contra `mongo:6.0`:
 
 ```bash
 # Desde la raíz del repositorio (comando único):

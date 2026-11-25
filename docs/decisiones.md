@@ -1,8 +1,8 @@
 ---
 type: Decisiones
-title: Decisiones de diseño y arquitectura (Sprint 1)
-description: Registro de decisiones técnicas tomadas durante el Sprint 1 y cambios de enfoque verificados en el historial de Git.
-timestamp: 2026-11-11
+title: Decisiones de diseño y arquitectura (Sprints 1–3)
+description: Registro de decisiones técnicas tomadas a lo largo del proyecto y cambios de enfoque verificados en el historial de Git.
+timestamp: 2026-11-25
 ---
 
 # Decisiones de diseño
@@ -89,4 +89,22 @@ timestamp: 2026-11-11
 
 - **Qué se decidió**: Mantener desacopladas de Mongoose las nuevas piezas de lógica del Sprint 2 ([`backend/logic/roomLogic.js`](../backend/logic/roomLogic.js) y [`backend/logic/gameLogic.js`](../backend/logic/gameLogic.js)), dotar de respaldo automático en memoria a [`backend/data/roomModel.js`](../backend/data/roomModel.js), [`backend/data/gameModel.js`](../backend/data/gameModel.js) y [`backend/logic/logger.js`](../backend/logic/logger.js) cuando `mongoose.connection.readyState !== 1`, y fijar `"test": "jest --runInBand"` en [`backend/package.json`](../backend/package.json) desde el commit [`aa8f16f`](https://github.com/Fernan196/proyecto-pis/commit/aa8f16f).
 - **Por qué**: Tras el fallo puntual `43959694629` en CI durante el PR `#22` por colisión entre archivos de prueba ejecutándose en paralelo contra la base `proyecto_pis_test` de `mongo:6.0`, `--runInBand` garantiza determinismo en GitHub Actions mientras el respaldo en memoria permite ejecutar en local sin demonio MongoDB las **46 pruebas** de `logger`, `roomLogic`, `gameLogic` y `socketManager` (completando en CI las **66 pruebas** totales de la suite).
+- **Estado**: Vigente.
+
+## D-15: Retirada completa del filtro de dominios (`ALLOWED_DOMAINS` y `POST /api/prueba/dominio`)
+
+- **Qué se decidió**: Eliminar por completo la comprobación de `ALLOWED_DOMAINS` en `registrarUsuario`, la función `comprobarDominioPermitido`, el endpoint `POST /api/prueba/dominio`, los 4 tests `variante3` en [`backend/logic/userLogic.test.js`](../backend/logic/userLogic.test.js) y la variable `ALLOWED_DOMAINS` de [`backend/.env.example`](../backend/.env.example) y [`README.md`](../README.md).
+- **Por qué**: Fue una prueba técnica puntual del Sprint 1 y no tiene sentido para la aplicación restringir el acceso por dominio de correo.
+- **Estado**: Vigente.
+
+## D-16: Desacoplamiento de `userLogic.js` mediante inyección de dependencias y repositorio en memoria
+
+- **Qué se decidió**: Refactorizar [`backend/logic/userLogic.js`](../backend/logic/userLogic.js) al patrón fábrica `createUserLogic({ userRepo, mailer, logger })` instanciado en la raíz de composición ([`backend/index.js`](../backend/index.js)), eliminar `require('mongoose')` y las importaciones directas de datos y servicios externos en `userLogic.js`, y dotar a [`backend/data/userModel.js`](../backend/data/userModel.js) de funciones de repositorio (`esIdValido`, `crearUsuarioDatos`, `buscarPorEmail`, `buscarPorId`, `listarUsuariosDatos`, `actualizarUsuarioDatos`, `contarPorRol`, `eliminarPorId`, `limpiarUsuarios`) con respaldo automático en memoria cuando `mongoose.connection.readyState !== 1`.
+- **Por qué**: Mantener las fronteras de [`arquitectura.md`](./arquitectura.md) (la lógica no conoce HTTP, el ODM ni los servicios externos, que se crean en la composición y se inyectan) y permitir ejecutar toda la suite de pruebas en local sin MongoDB y con dobles explícitos sin depender de `jest.mock`.
+- **Estado**: Vigente.
+
+## D-17: Adaptador SMTP en `backend/services/mailer.js`, variable `BACKEND_URL` y correo corporativo
+
+- **Qué se decidió**: Mover el servicio de correo desde `backend/logic/mailer.js` a [`backend/services/mailer.js`](../backend/services/mailer.js) con la fábrica `createMailer({ transporter, emailUser, emailPass, backendUrl })`, sustituir la URL fija de activación por la variable de entorno `BACKEND_URL` y rediseñar el correo con remitente `"Michis Explosivos"`, asunto `"Activa tu cuenta en Michis Explosivos"`, saludo personalizado con `username`, HTML *responsive* con la paleta oscura/neón del juego, texto plano alternativo (`text`) y aviso de caducidad de 1 hora.
+- **Por qué**: Separar los adaptadores de servicios externos de la capa lógica, hacer la URL de confirmación más real y segura entre entornos mediante configuración externa, y mantener coherencia visual y de marca entre la aplicación y el correo.
 - **Estado**: Vigente.

@@ -1,8 +1,8 @@
 ---
 type: Arquitectura
-title: Arquitectura del sistema (Sprint 1)
-description: Organización en capas del backend y del frontend, frontera entre módulos y catálogo de endpoints HTTP.
-timestamp: 2026-11-11
+title: Arquitectura del sistema (Sprints 1–3)
+description: Organización en capas del backend y del frontend, frontera entre módulos y catálogo de endpoints HTTP y eventos Socket.IO.
+timestamp: 2026-11-25
 ---
 
 # Arquitectura del sistema
@@ -13,20 +13,21 @@ La justificación de las tecnologías seleccionadas y del modelo de despliegue d
 
 El servidor (`backend/`) se organiza en tres capas distribuidas en archivos independientes:
 
-1. **Capa API (presentación del servidor)**:
-   - [`backend/index.js`](../backend/index.js): inicializa el servidor HTTP de Express y Socket.IO, configura CORS y el parseo JSON, conecta Mongoose, expone los endpoints HTTP y gestiona el intercambio de código OAuth con GitHub.
+1. **Capa API (presentación del servidor y composición)**:
+   - [`backend/index.js`](../backend/index.js): raíz de composición e inicialización del servidor HTTP de Express y Socket.IO; configura CORS y el parseo JSON, conecta Mongoose, instancia los adaptadores externos (`createMailer` con `BACKEND_URL`) e inyecta `userRepo`, `mailer` y `logger` en `createUserLogic`, exponiendo los endpoints HTTP y el intercambio OAuth con GitHub.
    - [`backend/logic/authMiddleware.js`](../backend/logic/authMiddleware.js): middleware HTTP que verifica la cabecera `Authorization: Bearer <credencial>` y adjunta `req.user` (devuelve `401` si falta o no es válida).
    - [`backend/logic/adminMiddleware.js`](../backend/logic/adminMiddleware.js): middleware HTTP que comprueba `req.user.rol === 'admin'` (devuelve `403` en caso contrario).
-2. **Capa de lógica de negocio**:
-   - [`backend/logic/userLogic.js`](../backend/logic/userLogic.js): implementa las reglas de dominio de usuarios y clasificación (`registrarUsuario`, `loginUsuario`, `confirmarCuenta`, `listarUsuarios`, `comprobarActivo`, `cambiarRolUsuario`, `eliminarUsuario`, `procesarLoginGitHub`, `comprobarDominioPermitido` y `obtenerRanking`).
+2. **Capa de servicios externos**:
+   - [`backend/services/mailer.js`](../backend/services/mailer.js): adaptador SMTP (`createMailer` y `construirCorreoConfirmacion`) basado en `nodemailer`; permite inyectar un `transporter` doble en pruebas y construye el correo HTML/texto de activación con la URL base `BACKEND_URL`.
+3. **Capa de lógica de negocio**:
+   - [`backend/logic/userLogic.js`](../backend/logic/userLogic.js): exporta la fábrica `createUserLogic({ userRepo, mailer, logger })`, completamente desacoplada de Mongoose, HTTP y SMTP, implementando `registrarUsuario`, `loginUsuario`, `confirmarCuenta`, `listarUsuarios`, `comprobarActivo`, `cambiarRolUsuario`, `eliminarUsuario`, `procesarLoginGitHub` y `obtenerRanking`.
    - [`backend/logic/roomLogic.js`](../backend/logic/roomLogic.js): implementa la gestión de salas del lobby (`generarCodigoSala`, `crearSala`, `listarSalasDisponibles`, `obtenerSala`, `obtenerSalaActivaJugador`, `unirseASala`, `salirDeSala`, `marcarSalaEnCurso`).
    - [`backend/logic/gameLogic.js`](../backend/logic/gameLogic.js): implementa el motor de reglas de *Michis Explosivos* (`construirMazoInicial`, `iniciarPartidaDirecta`, `iniciarPartidaDesdeSala`, `obtenerPartida`, `obtenerVistaJugador`, `obtenerPartidaVistaJugador`, `obtenerSesionJuegoActiva`, `avanzarTurno`, `robarCarta`, `reinsertarBomba`, `jugarCarta`).
    - [`backend/logic/socketManager.js`](../backend/logic/socketManager.js): gestiona el servidor Socket.IO (`autenticarSocketMiddleware`, `configurarSocketIO`, `emitirActualizacionSala`, `emitirSalaEliminada`, `emitirEstadoPartidaPorJugador`, `emitirCartasFuturoPrivadas`).
-   - [`backend/logic/mailer.js`](../backend/logic/mailer.js): servicio de envío del correo de activación mediante `nodemailer` (`enviarCorreoConfirmacion`).
    - [`backend/logic/logger.js`](../backend/logic/logger.js): módulo de registro estructurado de actividad del sistema (`registrarEvento`, `registrarError`, `obtenerLogs`, `limpiarLogs`).
-   - [`backend/logic/userLogic.test.js`](../backend/logic/userLogic.test.js), [`backend/logic/logger.test.js`](../backend/logic/logger.test.js), [`backend/logic/roomLogic.test.js`](../backend/logic/roomLogic.test.js), [`backend/logic/gameLogic.test.js`](../backend/logic/gameLogic.test.js) y [`backend/logic/socketManager.test.js`](../backend/logic/socketManager.test.js): baterías de pruebas unitarias automatizadas con Jest sobre la capa lógica (20, 4, 10, 26 y 6 pruebas respectivamente, 66 en total).
-3. **Capa de acceso a datos**:
-   - [`backend/data/userModel.js`](../backend/data/userModel.js): define el esquema `userSchema` (`username`, `email`, `confirmado`, `rol`, `githubId`, `partidasJugadas`, `partidasGanadas` y credencial con hash) y exporta el modelo `User` de Mongoose junto con `registrarResultadoPartidaUsuarios`, `obtenerRankingUsuarios` y `limpiarEstadisticasMemoria`, incluyendo la transformación `toJSON` para normalizar `id` y omitir el hash.
+   - [`backend/logic/userLogic.test.js`](../backend/logic/userLogic.test.js), [`backend/services/mailer.test.js`](../backend/services/mailer.test.js), [`backend/logic/logger.test.js`](../backend/logic/logger.test.js), [`backend/logic/roomLogic.test.js`](../backend/logic/roomLogic.test.js), [`backend/logic/gameLogic.test.js`](../backend/logic/gameLogic.test.js) y [`backend/logic/socketManager.test.js`](../backend/logic/socketManager.test.js): baterías de pruebas unitarias automatizadas con Jest (`18`, `4`, `4`, `10`, `26` y `6` pruebas respectivamente, **68 en total**).
+4. **Capa de acceso a datos**:
+   - [`backend/data/userModel.js`](../backend/data/userModel.js): define el esquema `userSchema` (`username`, `email`, `confirmado`, `rol`, `githubId`, `partidasJugadas`, `partidasGanadas` y credencial con hash) y expone funciones de repositorio agnósticas (`esIdValido`, `crearUsuarioDatos`, `buscarPorEmail`, `buscarPorId`, `listarUsuariosDatos`, `actualizarUsuarioDatos`, `contarPorRol`, `eliminarPorId`, `limpiarUsuarios`, `registrarResultadoPartidaUsuarios`, `obtenerRankingUsuarios`, `limpiarEstadisticasMemoria`) sobre Mongoose con respaldo automático en memoria cuando no hay conexión activa.
    - [`backend/data/roomModel.js`](../backend/data/roomModel.js): define el esquema `roomSchema` (`codigo`, `nombre`, `hostId`, `hostUsername`, `maxJugadores`, `estado`, `jugadores`, `partidaId`) y expone funciones de repositorio (`crearSalaDatos`, `buscarPorCodigo`, `buscarSalaActivaPorJugador`, `listarSalasPorEstado`, `actualizarSalaDatos`, `eliminarPorCodigo`, `limpiarSalas`) sobre Mongoose con respaldo automático en memoria cuando no hay conexión activa.
    - [`backend/data/gameModel.js`](../backend/data/gameModel.js): define el esquema `gameSchema` (`codigoSala`, `estado`, `jugadores`, `mazo`, `descartes`, `turnoActualIndex`, `turnoActualUserId`, `turnosPendientes`, `jugadorDesactivando`, `ganadorId`, `ganadorUsername`, `historialAcciones`) y expone funciones de repositorio (`crearPartidaDatos`, `buscarPorCodigoSala`, `buscarPartidaActivaPorJugador`, `actualizarPartidaDatos`, `eliminarPorCodigoSala`, `limpiarPartidas`) sobre Mongoose con respaldo en memoria.
 
@@ -57,9 +58,8 @@ La aplicación cliente (`frontend/src/`) separa la interfaz gráfica de la comun
 - **Frontera API ↔ Lógica de negocio (Backend)**:
   - [`backend/index.js`](../backend/index.js) extrae parámetros de `req.body`, `req.params` y `req.user`, invoca las funciones exportadas por [`backend/logic/userLogic.js`](../backend/logic/userLogic.js), [`backend/logic/roomLogic.js`](../backend/logic/roomLogic.js), [`backend/logic/gameLogic.js`](../backend/logic/gameLogic.js), [`backend/logic/socketManager.js`](../backend/logic/socketManager.js) y [`backend/logic/logger.js`](../backend/logic/logger.js) y traduce el resultado o la excepción a códigos de estado HTTP (`200`, `201`, `302`, `400`, `401`, `403`, `404`, `500`).
   - Nota de ubicación de archivos: [`authMiddleware.js`](../backend/logic/authMiddleware.js) y [`adminMiddleware.js`](../backend/logic/adminMiddleware.js) están dentro de la carpeta `backend/logic/`, aunque operan sobre los objetos `req` y `res` de Express en la capa API.
-- **Frontera Lógica de negocio ↔ Acceso a datos (Backend)**:
-  - [`backend/logic/userLogic.js`](../backend/logic/userLogic.js) importa el modelo `User` de [`backend/data/userModel.js`](../backend/data/userModel.js) y ejecuta sobre él operaciones de Mongoose (`User.findOne`, `User.find`, `User.findById`, `User.findByIdAndDelete`, `User.countDocuments`, `nuevoUsuario.save`) además de validar identificadores con `mongoose.Types.ObjectId.isValid`. Debido a que `userModel.js` expone directamente el modelo de Mongoose y no un repositorio con interfaz agnóstica, al pasar de memoria a base de datos en el commit [`993260e`](https://github.com/Fernan196/proyecto-pis/commit/993260e) fue necesario modificar `userLogic.js`.
-  - En contraste, [`backend/logic/roomLogic.js`](../backend/logic/roomLogic.js) y [`backend/logic/gameLogic.js`](../backend/logic/gameLogic.js) están completamente desacoplados de Mongoose: solo invocan las funciones de repositorio exportadas por [`backend/data/roomModel.js`](../backend/data/roomModel.js) y [`backend/data/gameModel.js`](../backend/data/gameModel.js).
+- **Frontera Lógica de negocio ↔ Acceso a datos y servicios externos (Backend)**:
+  - [`backend/logic/userLogic.js`](../backend/logic/userLogic.js), [`backend/logic/roomLogic.js`](../backend/logic/roomLogic.js) y [`backend/logic/gameLogic.js`](../backend/logic/gameLogic.js) están completamente desacoplados de Mongoose y de servicios externos: `userLogic.js` recibe `userRepo`, `mailer` y `logger` inyectados desde [`backend/index.js`](../backend/index.js) mediante `createUserLogic` (véase [`D-16`](./decisiones.md#d-16-desacoplamiento-de-userlogicjs-mediante-inyección-de-dependencias-y-repositorio-en-memoria)), mientras que `roomLogic.js` y `gameLogic.js` invocan las funciones de repositorio de [`backend/data/roomModel.js`](../backend/data/roomModel.js) y [`backend/data/gameModel.js`](../backend/data/gameModel.js).
 
 ## 4. Tabla de endpoints de la API
 
@@ -77,7 +77,6 @@ Definidos en [`backend/index.js`](../backend/index.js):
 | `PATCH` | `/api/usuarios/:id/rol` | Solo `admin` (`authMiddleware` + `adminMiddleware`) | `userLogic.cambiarRolUsuario(id, nuevoRol)` | `200 OK` con `{ mensaje, usuario }` o `400` |
 | `DELETE` | `/api/usuarios/:id` | Autenticado (`authMiddleware`): `admin` a cualquiera (salvo último `admin`); `user` solo a sí mismo | `userLogic.eliminarUsuario({ solicitanteId, solicitanteRol, objetivoId })` | `200 OK` con `{ mensaje }` o `400` / `403` / `404` |
 | `GET` | `/api/logs` | Solo `admin` (`authMiddleware` + `adminMiddleware`) | `logger.obtenerLogs(limite)` | `200 OK` con lista de eventos recientes del sistema |
-| `POST` | `/api/prueba/dominio` | Público (sin sesión) | `userLogic.comprobarDominioPermitido(email)` | `200 OK` con `{ permitido: boolean }` o `400` |
 | `POST` | `/api/salas` | Autenticado (`authMiddleware`) | `roomLogic.crearSala(...)` | `201 Created` con la sala creada o `400` |
 | `GET` | `/api/salas` | Autenticado (`authMiddleware`) | `roomLogic.listarSalasDisponibles()` | `200 OK` con array de salas en estado `WAITING` |
 | `GET` | `/api/salas/:codigo` | Autenticado (`authMiddleware`) | `roomLogic.obtenerSala(req.params.codigo)` | `200 OK` con datos de la sala o `404` |

@@ -1,38 +1,60 @@
+const net = require('net');
 const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcrypt');
 
-// Mock del servicio de correo para ejecutar pruebas aisladas y sin conexión externa
-jest.mock('./mailer', () => ({
-    enviarCorreoConfirmacion: jest.fn().mockResolvedValue(true)
-}));
-
-const userLogic = require('./userLogic');
+const { createUserLogic } = require('./userLogic');
 const User = require('../data/userModel');
-const { enviarCorreoConfirmacion } = require('./mailer');
+const logger = require('./logger');
+
+function puertoMongoDisponible(host = '127.0.0.1', port = 27017) {
+    return new Promise((resolve) => {
+        const socket = net.connect(port, host);
+        socket.setTimeout(400);
+        socket.on('connect', () => {
+            socket.destroy();
+            resolve(true);
+        });
+        socket.on('timeout', () => {
+            socket.destroy();
+            resolve(false);
+        });
+        socket.on('error', () => {
+            resolve(false);
+        });
+    });
+}
 
 describe('Pruebas Unitarias de la Capa Lógica (userLogic)', () => {
+    const mailerDouble = {
+        enviarCorreoConfirmacion: jest.fn().mockResolvedValue(true)
+    };
+    const userLogic = createUserLogic({
+        userRepo: User,
+        mailer: mailerDouble,
+        logger
+    });
 
     beforeAll(async () => {
-        // Asegurar variable secreta para JWT en entorno de pruebas
         process.env.JWT_SECRET = process.env.JWT_SECRET || 'secreto-tests-ci';
 
-        // Conectar a la base de datos configurada para tests o local
-        const uri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/proyecto_pis_test';
-        if (mongoose.connection.readyState === 0) {
-            await mongoose.connect(uri);
+        if (process.env.MONGODB_URI || await puertoMongoDisponible()) {
+            const uri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/proyecto_pis_test';
+            if (mongoose.connection.readyState === 0) {
+                await mongoose.connect(uri);
+            }
         }
     });
 
     beforeEach(async () => {
-        // Limpiar la colección antes de cada prueba para garantizar independencia
-        await User.deleteMany({});
+        await User.limpiarUsuarios();
         jest.clearAllMocks();
     });
 
     afterAll(async () => {
-        await User.deleteMany({});
-        await mongoose.connection.close();
+        await User.limpiarUsuarios();
+        if (mongoose.connection.readyState === 1) {
+            await mongoose.connection.close();
+        }
     });
 
     // ==========================================
@@ -50,21 +72,40 @@ describe('Pruebas Unitarias de la Capa Lógica (userLogic)', () => {
             expect(resultado).toHaveProperty('userId');
             expect(resultado.mensaje).toContain('revisa tu correo');
 
-            // Verificar persistencia en base de datos
-            const usuarioGuardado = await User.findById(resultado.userId);
+            const usuarioGuardado = await User.buscarPorId(resultado.userId, { incluirPassword: true });
             expect(usuarioGuardado).not.toBeNull();
             expect(usuarioGuardado.confirmado).toBe(false);
             expect(usuarioGuardado.rol).toBe('user');
-
-            // Verificar que la contraseña no se guardó en texto plano
             expect(usuarioGuardado.password).not.toBe('password123');
 
-            // Verificar que se invocó el envío de correo con un token válido
-            expect(enviarCorreoConfirmacion).toHaveBeenCalledTimes(1);
-            expect(enviarCorreoConfirmacion).toHaveBeenCalledWith(
-                'fernando@test.com',
-                expect.any(String)
-            );
+            expect(mailerDouble.enviarCorreoConfirmacion).toHaveBeenCalledTimes(1);
+            expect(mailerDouble.enviarCorreoConfirmacion).toHaveBeenCalledWith({
+                email: 'fernando@test.com',
+                username: 'fernando',
+                token: expect.any(String)
+            });
+        });
+
+        test('Permite registrar correos de cualquier dominio sin restricción', async () => {
+            const envOriginal = process.env.ALLOWED_DOMAINS;
+            process.env.ALLOWED_DOMAINS = 'solo-uni.es';
+
+            try {
+                const resultado = await userLogic.registrarUsuario({
+                    username: 'libre',
+                    email: 'libre@cualquierdominio.com',
+                    password: 'password123'
+                });
+
+                expect(resultado).toHaveProperty('userId');
+                expect(mailerDouble.enviarCorreoConfirmacion).toHaveBeenCalledTimes(1);
+            } finally {
+                if (envOriginal === undefined) {
+                    delete process.env.ALLOWED_DOMAINS;
+                } else {
+                    process.env.ALLOWED_DOMAINS = envOriginal;
+                }
+            }
         });
 
         test('Error: No debe permitir registrar un usuario con un email que ya existe', async () => {
@@ -74,7 +115,6 @@ describe('Pruebas Unitarias de la Capa Lógica (userLogic)', () => {
                 password: 'password123'
             });
 
-            // Intentar registrar el mismo email de nuevo
             await expect(
                 userLogic.registrarUsuario({
                     username: 'segundo_usuario',
@@ -126,7 +166,7 @@ describe('Pruebas Unitarias de la Capa Lógica (userLogic)', () => {
             const resultado = await userLogic.confirmarCuenta(tokenValido);
             expect(resultado.yaConfirmado).toBe(false);
 
-            const usuario = await User.findById(registro.userId);
+            const usuario = await User.buscarPorId(registro.userId);
             expect(usuario.confirmado).toBe(true);
         });
 
@@ -164,8 +204,7 @@ describe('Pruebas Unitarias de la Capa Lógica (userLogic)', () => {
                 password: 'password123'
             });
 
-            // Confirmar la cuenta
-            await User.findByIdAndUpdate(registro.userId, { confirmado: true });
+            await User.actualizarUsuarioDatos(registro.userId, { confirmado: true });
 
             const loginRes = await userLogic.loginUsuario({
                 email: 'confirmado@test.com',
@@ -176,7 +215,6 @@ describe('Pruebas Unitarias de la Capa Lógica (userLogic)', () => {
             expect(loginRes.user.email).toBe('confirmado@test.com');
             expect(loginRes.user.username).toBe('confirmado');
 
-            // Verificar que el token devuelto se puede decodificar
             const decoded = jwt.verify(loginRes.token, process.env.JWT_SECRET);
             expect(decoded.email).toBe('confirmado@test.com');
         });
@@ -187,7 +225,7 @@ describe('Pruebas Unitarias de la Capa Lógica (userLogic)', () => {
                 email: 'usuario1@test.com',
                 password: 'password123'
             });
-            await User.findByIdAndUpdate(registro.userId, { confirmado: true });
+            await User.actualizarUsuarioDatos(registro.userId, { confirmado: true });
 
             await expect(
                 userLogic.loginUsuario({
@@ -204,7 +242,7 @@ describe('Pruebas Unitarias de la Capa Lógica (userLogic)', () => {
     describe('Eliminación de usuarios y control de permisos', () => {
 
         test('Un usuario normal puede eliminar su propia cuenta', async () => {
-            const user = await User.create({
+            const user = await User.crearUsuarioDatos({
                 username: 'usuario_a',
                 email: 'a@test.com',
                 password: 'hash',
@@ -213,18 +251,18 @@ describe('Pruebas Unitarias de la Capa Lógica (userLogic)', () => {
             });
 
             const res = await userLogic.eliminarUsuario({
-                solicitanteId: user._id,
+                solicitanteId: user.id,
                 solicitanteRol: 'user',
-                objetivoId: user._id
+                objetivoId: user.id
             });
 
             expect(res.mensaje).toBe('Cuenta eliminada exitosamente');
-            const enDb = await User.findById(user._id);
+            const enDb = await User.buscarPorId(user.id);
             expect(enDb).toBeNull();
         });
 
         test('Error: Un usuario normal no puede eliminar la cuenta de otro usuario', async () => {
-            const userA = await User.create({
+            const userA = await User.crearUsuarioDatos({
                 username: 'usuario_a',
                 email: 'a@test.com',
                 password: 'hash',
@@ -232,7 +270,7 @@ describe('Pruebas Unitarias de la Capa Lógica (userLogic)', () => {
                 confirmado: true
             });
 
-            const userB = await User.create({
+            const userB = await User.crearUsuarioDatos({
                 username: 'usuario_b',
                 email: 'b@test.com',
                 password: 'hash',
@@ -242,19 +280,18 @@ describe('Pruebas Unitarias de la Capa Lógica (userLogic)', () => {
 
             await expect(
                 userLogic.eliminarUsuario({
-                    solicitanteId: userA._id,
+                    solicitanteId: userA.id,
                     solicitanteRol: 'user',
-                    objetivoId: userB._id
+                    objetivoId: userB.id
                 })
             ).rejects.toThrow('No tienes permiso para eliminar esta cuenta');
 
-            // Comprobar que el usuario B sigue intacto
-            const enDb = await User.findById(userB._id);
+            const enDb = await User.buscarPorId(userB.id);
             expect(enDb).not.toBeNull();
         });
 
         test('Un administrador puede eliminar la cuenta de cualquier usuario', async () => {
-            const admin = await User.create({
+            const admin = await User.crearUsuarioDatos({
                 username: 'admin',
                 email: 'admin@test.com',
                 password: 'hash',
@@ -262,7 +299,7 @@ describe('Pruebas Unitarias de la Capa Lógica (userLogic)', () => {
                 confirmado: true
             });
 
-            const targetUser = await User.create({
+            const targetUser = await User.crearUsuarioDatos({
                 username: 'target',
                 email: 'target@test.com',
                 password: 'hash',
@@ -271,18 +308,18 @@ describe('Pruebas Unitarias de la Capa Lógica (userLogic)', () => {
             });
 
             const res = await userLogic.eliminarUsuario({
-                solicitanteId: admin._id,
+                solicitanteId: admin.id,
                 solicitanteRol: 'admin',
-                objetivoId: targetUser._id
+                objetivoId: targetUser.id
             });
 
             expect(res.mensaje).toBe('Cuenta eliminada exitosamente');
-            const enDb = await User.findById(targetUser._id);
+            const enDb = await User.buscarPorId(targetUser.id);
             expect(enDb).toBeNull();
         });
 
         test('Error: No se permite eliminar al único administrador del sistema', async () => {
-            const unicoAdmin = await User.create({
+            const unicoAdmin = await User.crearUsuarioDatos({
                 username: 'admin_unico',
                 email: 'unico@test.com',
                 password: 'hash',
@@ -292,21 +329,21 @@ describe('Pruebas Unitarias de la Capa Lógica (userLogic)', () => {
 
             await expect(
                 userLogic.eliminarUsuario({
-                    solicitanteId: unicoAdmin._id,
+                    solicitanteId: unicoAdmin.id,
                     solicitanteRol: 'admin',
-                    objetivoId: unicoAdmin._id
+                    objetivoId: unicoAdmin.id
                 })
             ).rejects.toThrow('no es posible eliminar al único administrador');
         });
     });
 
     // ==========================================
-    // 5. CAMBIO DE ROLES Y CONSULTA DE ESTADO
+    // 5. CAMBIO DE ROLES, ESTADO ACTIVO Y OAUTH
     // ==========================================
-    describe('Gestión de roles y estado activo', () => {
+    describe('Gestión de roles, estado activo y OAuth GitHub', () => {
 
         test('Debe permitir promover un usuario normal a administrador', async () => {
-            const user = await User.create({
+            const user = await User.crearUsuarioDatos({
                 username: 'promovible',
                 email: 'promo@test.com',
                 password: 'hash',
@@ -314,12 +351,12 @@ describe('Pruebas Unitarias de la Capa Lógica (userLogic)', () => {
                 confirmado: true
             });
 
-            const actualizado = await userLogic.cambiarRolUsuario(user._id, 'admin');
+            const actualizado = await userLogic.cambiarRolUsuario(user.id, 'admin');
             expect(actualizado.rol).toBe('admin');
         });
 
         test('Error: No permite degradar a usuario al único administrador del sistema', async () => {
-            const unicoAdmin = await User.create({
+            const unicoAdmin = await User.crearUsuarioDatos({
                 username: 'admin_solitario',
                 email: 'solitario@test.com',
                 password: 'hash',
@@ -328,12 +365,12 @@ describe('Pruebas Unitarias de la Capa Lógica (userLogic)', () => {
             });
 
             await expect(
-                userLogic.cambiarRolUsuario(unicoAdmin._id, 'user')
+                userLogic.cambiarRolUsuario(unicoAdmin.id, 'user')
             ).rejects.toThrow('no puedes quitar privilegios al único administrador');
         });
 
         test('Comprobar estado activo retorna el estado correcto del usuario', async () => {
-            const user = await User.create({
+            const user = await User.crearUsuarioDatos({
                 username: 'activo_check',
                 email: 'check@test.com',
                 password: 'hash',
@@ -341,53 +378,24 @@ describe('Pruebas Unitarias de la Capa Lógica (userLogic)', () => {
                 confirmado: true
             });
 
-            const estado = await userLogic.comprobarActivo(user._id);
+            const estado = await userLogic.comprobarActivo(user.id);
             expect(estado.activo).toBe(true);
             expect(estado.email).toBe('check@test.com');
         });
-    });
 
-    // ==========================================
-    // 6. DOMINIOS PERMITIDOS (VARIANTE 3)
-    // ==========================================
-    describe('Comprobación de dominios permitidos (variante3)', () => {
-        const envOriginal = process.env.ALLOWED_DOMAINS;
+        test('procesarLoginGitHub crea cuenta confirmada con rol user sin enviar correo', async () => {
+            const res = await userLogic.procesarLoginGitHub({
+                githubId: 98765,
+                email: 'octocat@test.com',
+                username: 'octocat'
+            });
 
-        beforeEach(() => {
-            process.env.ALLOWED_DOMAINS = 'miuni.es,alu.miuni.es';
-        });
+            expect(res).toHaveProperty('token');
+            expect(res.user.rol).toBe('user');
+            expect(mailerDouble.enviarCorreoConfirmacion).not.toHaveBeenCalled();
 
-        afterAll(() => {
-            process.env.ALLOWED_DOMAINS = envOriginal;
-        });
-
-        test('variante3: permite un email cuyo dominio está en ALLOWED_DOMAINS sin distinguir mayúsculas', () => {
-            const res1 = userLogic.comprobarDominioPermitido('ana@miuni.es');
-            const res2 = userLogic.comprobarDominioPermitido('PEDRO@ALU.MIUNI.ES');
-
-            expect(res1).toEqual({ permitido: true });
-            expect(res2).toEqual({ permitido: true });
-        });
-
-        test('variante3: rechaza un email de un dominio no listado o de un subdominio no autorizado', () => {
-            const resDominioExterno = userLogic.comprobarDominioPermitido('juan@gmail.com');
-            const resSubdominio = userLogic.comprobarDominioPermitido('x@sub.miuni.es');
-
-            expect(resDominioExterno).toEqual({ permitido: false });
-            expect(resSubdominio).toEqual({ permitido: false });
-        });
-
-        test('variante3: lanza un error 400 cuando el email no contiene arroba', () => {
-            expect(() => {
-                userLogic.comprobarDominioPermitido('correosinarroba.es');
-            }).toThrow();
-        });
-
-        test('variante3: lanza un error 400 cuando el email está ausente o no es un string', () => {
-            expect(() => userLogic.comprobarDominioPermitido(undefined)).toThrow();
-            expect(() => userLogic.comprobarDominioPermitido(null)).toThrow();
-            expect(() => userLogic.comprobarDominioPermitido(12345)).toThrow();
-            expect(() => userLogic.comprobarDominioPermitido('')).toThrow();
+            const guardado = await User.buscarPorId(res.user.id);
+            expect(guardado.confirmado).toBe(true);
         });
     });
 });
