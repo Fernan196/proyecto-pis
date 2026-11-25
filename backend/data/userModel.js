@@ -59,7 +59,200 @@ userSchema.set('toJSON', {
 
 const User = mongoose.model('User', userSchema);
 
+const usuariosEnMemoria = new Map();
 const estadisticasEnMemoria = new Map();
+
+function usarBaseDeDatos() {
+    return mongoose.connection.readyState === 1;
+}
+
+function normalizarUsuario(docOrObj, { incluirPassword = false } = {}) {
+    if (!docOrObj) return null;
+    const plain = typeof docOrObj.toObject === 'function' ? docOrObj.toObject() : { ...docOrObj };
+    const id = plain.id || (plain._id ? plain._id.toString() : null);
+
+    const resultado = {
+        id,
+        username: plain.username,
+        email: plain.email,
+        confirmado: Boolean(plain.confirmado),
+        rol: plain.rol || 'user',
+        githubId: plain.githubId ?? null,
+        partidasJugadas: plain.partidasJugadas ?? 0,
+        partidasGanadas: plain.partidasGanadas ?? 0,
+        createdAt: plain.createdAt,
+        updatedAt: plain.updatedAt
+    };
+
+    if (incluirPassword) {
+        resultado.password = plain.password;
+    }
+
+    return resultado;
+}
+
+/**
+ * Comprueba si un identificador tiene formato válido de ObjectId.
+ */
+User.esIdValido = function (id) {
+    return Boolean(id && mongoose.Types.ObjectId.isValid(String(id)));
+};
+
+/**
+ * Crea un nuevo usuario en MongoDB o en memoria si no hay conexión activa.
+ */
+User.crearUsuarioDatos = async function (datos) {
+    const emailNorm = String(datos.email || '').trim().toLowerCase();
+
+    if (usarBaseDeDatos()) {
+        const doc = await User.create({
+            ...datos,
+            email: emailNorm
+        });
+        return normalizarUsuario(doc);
+    }
+
+    for (const existente of usuariosEnMemoria.values()) {
+        if (existente.email === emailNorm) {
+            throw new Error('El correo electrónico ya está registrado');
+        }
+    }
+
+    const ahora = new Date().toISOString();
+    const id = new mongoose.Types.ObjectId().toString();
+    const registro = {
+        id,
+        username: String(datos.username || '').trim(),
+        email: emailNorm,
+        password: datos.password ?? null,
+        confirmado: Boolean(datos.confirmado),
+        rol: datos.rol || 'user',
+        githubId: datos.githubId ?? null,
+        partidasJugadas: datos.partidasJugadas ?? 0,
+        partidasGanadas: datos.partidasGanadas ?? 0,
+        createdAt: ahora,
+        updatedAt: ahora
+    };
+
+    usuariosEnMemoria.set(id, registro);
+    return normalizarUsuario(registro);
+};
+
+/**
+ * Busca un usuario por email (incluye el hash de contraseña para autenticación).
+ */
+User.buscarPorEmail = async function (email) {
+    const emailNorm = String(email || '').trim().toLowerCase();
+    if (!emailNorm) return null;
+
+    if (usarBaseDeDatos()) {
+        const doc = await User.findOne({ email: emailNorm });
+        return normalizarUsuario(doc, { incluirPassword: true });
+    }
+
+    for (const usuario of usuariosEnMemoria.values()) {
+        if (usuario.email === emailNorm) {
+            return normalizarUsuario(usuario, { incluirPassword: true });
+        }
+    }
+    return null;
+};
+
+/**
+ * Busca un usuario por su identificador único.
+ */
+User.buscarPorId = async function (id, { incluirPassword = false } = {}) {
+    if (!User.esIdValido(id)) return null;
+    const uid = String(id);
+
+    if (usarBaseDeDatos()) {
+        const doc = await User.findById(uid);
+        return normalizarUsuario(doc, { incluirPassword });
+    }
+
+    return normalizarUsuario(usuariosEnMemoria.get(uid), { incluirPassword });
+};
+
+/**
+ * Lista todos los usuarios registrados sin exponer hashes de contraseña.
+ */
+User.listarUsuariosDatos = async function () {
+    if (usarBaseDeDatos()) {
+        const docs = await User.find().select('-password');
+        return docs.map(d => normalizarUsuario(d));
+    }
+
+    return Array.from(usuariosEnMemoria.values()).map(u => normalizarUsuario(u));
+};
+
+/**
+ * Actualiza los campos indicados de un usuario por ID.
+ */
+User.actualizarUsuarioDatos = async function (id, cambios) {
+    if (!User.esIdValido(id)) return null;
+    const uid = String(id);
+
+    if (usarBaseDeDatos()) {
+        const doc = await User.findByIdAndUpdate(
+            uid,
+            { $set: cambios },
+            { new: true, runValidators: true }
+        );
+        return normalizarUsuario(doc);
+    }
+
+    const existente = usuariosEnMemoria.get(uid);
+    if (!existente) return null;
+
+    const actualizado = {
+        ...existente,
+        ...cambios,
+        updatedAt: new Date().toISOString()
+    };
+    usuariosEnMemoria.set(uid, actualizado);
+    return normalizarUsuario(actualizado);
+};
+
+/**
+ * Cuenta cuántos usuarios tienen asignado un rol concreto.
+ */
+User.contarPorRol = async function (rol) {
+    if (usarBaseDeDatos()) {
+        return await User.countDocuments({ rol });
+    }
+
+    let total = 0;
+    for (const usuario of usuariosEnMemoria.values()) {
+        if (usuario.rol === rol) total += 1;
+    }
+    return total;
+};
+
+/**
+ * Elimina un usuario por su ID.
+ */
+User.eliminarPorId = async function (id) {
+    if (!User.esIdValido(id)) return false;
+    const uid = String(id);
+
+    if (usarBaseDeDatos()) {
+        const eliminado = await User.findByIdAndDelete(uid);
+        return Boolean(eliminado);
+    }
+
+    return usuariosEnMemoria.delete(uid);
+};
+
+/**
+ * Limpia los usuarios y estadísticas en MongoDB (si está conectado) y en memoria.
+ */
+User.limpiarUsuarios = async function () {
+    if (usarBaseDeDatos()) {
+        await User.deleteMany({});
+    }
+    usuariosEnMemoria.clear();
+    estadisticasEnMemoria.clear();
+};
 
 /**
  * Incrementa partidasJugadas (y partidasGanadas al ganador) tras finalizar una partida.
