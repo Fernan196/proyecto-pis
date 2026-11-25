@@ -61,3 +61,8 @@ export function reinsertarBombaSocket(datos, callback) {
     if (!socketInstance) return;
     socketInstance.emit('game:insert_bomb', datos, callback);
 }
+
+export function jugarNopeSocket(datos, callback) {
+    if (!socketInstance) return;
+    socketInstance.emit('game:nope', datos, callback);
+}

@@ -320,7 +320,10 @@ app.post('/api/partidas/:codigo/jugar', authMiddleware, async (req, res) => {
             tipoCarta: req.body?.tipoCarta,
             objetivoUserId: req.body?.objetivoUserId
         });
-        if (resultado.evento === 'VISION_FUTURO') {
+        if (resultado.evento === 'VENTANA_NOPE_ABIERTA') {
+            socketManager.emitirVentanaNope(resultado.partida.codigoSala, resultado.accionPendiente);
+            socketManager.programarResolucionNope(resultado.partida.codigoSala);
+        } else if (resultado.evento === 'VISION_FUTURO') {
             socketManager.emitirCartasFuturoPrivadas(
                 req.user.id,
                 resultado.partida.codigoSala,
@@ -330,6 +333,28 @@ app.post('/api/partidas/:codigo/jugar', authMiddleware, async (req, res) => {
         socketManager.emitirEstadoPartidaPorJugador(resultado.partida, {
             evento: resultado.evento,
             tipoCarta: resultado.tipoCarta,
+            actorUserId: String(req.user.id)
+        });
+        res.json({
+            ...resultado,
+            vistaJugador: gameLogic.obtenerVistaJugador(resultado.partida, req.user.id)
+        });
+    } catch (error) {
+        res.status(error.statusCode || 400).json({ error: error.message });
+    }
+});
+
+app.post('/api/partidas/:codigo/nope', authMiddleware, async (req, res) => {
+    try {
+        const resultado = await gameLogic.jugarNope({
+            codigoSala: req.params.codigo,
+            userId: req.user.id
+        });
+        socketManager.emitirVentanaNope(resultado.partida.codigoSala, resultado.accionPendiente);
+        socketManager.programarResolucionNope(resultado.partida.codigoSala);
+        socketManager.emitirEstadoPartidaPorJugador(resultado.partida, {
+            evento: resultado.evento,
+            canceladaActualmente: resultado.canceladaActualmente,
             actorUserId: String(req.user.id)
         });
         res.json({
