@@ -63,6 +63,11 @@ describe('Pruebas Unitarias de Tiempo Real (socketManager)', () => {
         await gameModel.limpiarPartidas();
     });
 
+    afterEach(() => {
+        socketManager.limpiarTemporizadoresNope();
+        jest.useRealTimers();
+    });
+
     afterAll(async () => {
         await gameModel.limpiarPartidas();
         process.env.JWT_SECRET = secretOriginal;
@@ -139,7 +144,8 @@ describe('Pruebas Unitarias de Tiempo Real (socketManager)', () => {
         expect(eventoU2.data.vistaJugador.jugadores[0].mano).toBeUndefined();
     });
 
-    test('Evento game:play_card con SEE_FUTURE emite game:future_cards en privado y game:state a todos', async () => {
+    test('Evento game:play_card con SEE_FUTURE abre ventana NOPE y tras 5 s emite game:future_cards en privado', async () => {
+        jest.useFakeTimers();
         const io = crearMockIO();
         socketManager.configurarSocketIO(io);
 
@@ -164,15 +170,72 @@ describe('Pruebas Unitarias de Tiempo Real (socketManager)', () => {
         const ack = jest.fn();
         await socketU1._events['game:play_card']({ codigoSala: 'SOCK02', tipoCarta: 'SEE_FUTURE' }, ack);
 
-        expect(ack).toHaveBeenCalledWith(expect.objectContaining({ ok: true, evento: 'VISION_FUTURO' }));
+        expect(ack).toHaveBeenCalledWith(expect.objectContaining({ ok: true, evento: 'VENTANA_NOPE_ABIERTA' }));
+        expect(io._emittedRooms['room:SOCK02'].map(m => m.event)).toContain('game:nope_window');
+
+        await jest.advanceTimersByTimeAsync(5000);
 
         const mensajesU1 = io._emittedRooms['user:u1'].map(m => m.event);
         const mensajesU2 = io._emittedRooms['user:u2'].map(m => m.event);
 
         expect(mensajesU1).toContain('game:future_cards');
         expect(mensajesU1).toContain('game:state');
-        expect(mensajesU2).toEqual(['game:state']);
-        expect(io._emittedRooms['user:u1'][0].data.cartasFuturo).toEqual(['BOMB', 'SKIP', 'FAVOR']);
+        expect(mensajesU2.every(e => e === 'game:state')).toBe(true);
+        const eventoFuturo = io._emittedRooms['user:u1'].find(m => m.event === 'game:future_cards');
+        expect(eventoFuturo.data.cartasFuturo).toEqual(['BOMB', 'SKIP', 'FAVOR']);
+    });
+
+    test('Evento game:nope reinicia el temporizador de 5 s y cancela la acción al vencer', async () => {
+        jest.useFakeTimers();
+        const io = crearMockIO();
+        socketManager.configurarSocketIO(io);
+
+        await gameModel.crearPartidaDatos({
+            codigoSala: 'SOCK04',
+            estado: 'PLAYING',
+            jugadores: [
+                { userId: 'u1', username: 'p1', mano: ['ATTACK'], vivo: true },
+                { userId: 'u2', username: 'p2', mano: ['NOPE', 'DEFUSE'], vivo: true }
+            ],
+            mazo: ['SKIP', 'BOMB'],
+            descartes: [],
+            turnoActualIndex: 0,
+            turnoActualUserId: 'u1',
+            turnosPendientes: 1
+        });
+
+        const socketU1 = crearMockSocket({ id: 'u1', username: 'p1' });
+        const socketU2 = crearMockSocket({ id: 'u2', username: 'p2' });
+        io._handlers.connection(socketU1);
+        io._handlers.connection(socketU2);
+
+        const ackPlay = jest.fn();
+        await socketU1._events['game:play_card']({ codigoSala: 'SOCK04', tipoCarta: 'ATTACK' }, ackPlay);
+        expect(ackPlay).toHaveBeenCalledWith(expect.objectContaining({ ok: true, evento: 'VENTANA_NOPE_ABIERTA' }));
+
+        await jest.advanceTimersByTimeAsync(3000);
+        const partidaAntesNope = await gameModel.buscarPorCodigoSala('SOCK04');
+        expect(partidaAntesNope.estado).toBe('WAITING_NOPE_WINDOW');
+
+        const ackNope = jest.fn();
+        await socketU2._events['game:nope']({ codigoSala: 'SOCK04' }, ackNope);
+        expect(ackNope).toHaveBeenCalledWith(expect.objectContaining({
+            ok: true,
+            evento: 'NOPE_JUGADO',
+            canceladaActualmente: true
+        }));
+
+        await jest.advanceTimersByTimeAsync(3000);
+        const partidaMitadReinicio = await gameModel.buscarPorCodigoSala('SOCK04');
+        expect(partidaMitadReinicio.estado).toBe('WAITING_NOPE_WINDOW');
+
+        await jest.advanceTimersByTimeAsync(2000);
+        const partidaResuelta = await gameModel.buscarPorCodigoSala('SOCK04');
+        expect(partidaResuelta.estado).toBe('PLAYING');
+        expect(partidaResuelta.turnoActualUserId).toBe('u1');
+
+        const ultimoEstadoU1 = io._emittedRooms['user:u1'].filter(m => m.event === 'game:state').pop();
+        expect(ultimoEstadoU1.data.evento).toBe('ACCION_CANCELADA_POR_NOPE');
     });
 
     test('Evento game:draw_card procesa el robo de carta, emite game:state y responde ok en ack', async () => {

@@ -140,6 +140,13 @@ export async function reinsertarBomba(codigo, posicionBomba, token) {
     }, 'Error al reinsertar el Michi Explosivo');
 }
 
+export async function jugarNope(codigo, token) {
+    return requestJson(`/partidas/${codigo}/nope`, {
+        method: 'POST',
+        headers: authHeaders(token)
+    }, 'Error al jugar ¡Alto ahí!');
+}
+
 // Reconexión y Ranking
 export async function obtenerRanking(token) {
     return requestJson('/ranking', {

@@ -80,8 +80,10 @@ describe('Pruebas Unitarias de la Capa Lógica - Motor de Juego (gameLogic)', ()
 
             const bombasEnMazo = mazo.filter(c => c === 'BOMB').length;
             const defusesEnMazo = mazo.filter(c => c === 'DEFUSE').length;
+            const nopesTotales = [...manosJugadores.flat(), ...mazo].filter(c => c === 'NOPE').length;
             expect(bombasEnMazo).toBe(n - 1);
             expect(defusesEnMazo).toBe(2);
+            expect(nopesTotales).toBe(5);
         }
 
         const sala = await roomLogic.crearSala({
@@ -373,10 +375,16 @@ describe('Pruebas Unitarias de la Capa Lógica - Motor de Juego (gameLogic)', ()
             turnosPendientes: 2
         });
 
-        const primerSalto = await gameLogic.jugarCarta({
+        const ventana1 = await gameLogic.jugarCarta({
             codigoSala: 'SKIP01',
             userId: 'u1',
             tipoCarta: 'SKIP'
+        });
+        expect(ventana1.evento).toBe('VENTANA_NOPE_ABIERTA');
+
+        const primerSalto = await gameLogic.resolverAccionPendiente({
+            codigoSala: 'SKIP01',
+            forzar: true
         });
 
         expect(primerSalto.evento).toBe('CARTA_JUGADA');
@@ -391,10 +399,15 @@ describe('Pruebas Unitarias de la Capa Lógica - Motor de Juego (gameLogic)', ()
             ]
         });
 
-        const segundoSalto = await gameLogic.jugarCarta({
+        await gameLogic.jugarCarta({
             codigoSala: 'SKIP01',
             userId: 'u1',
             tipoCarta: 'SKIP'
+        });
+
+        const segundoSalto = await gameLogic.resolverAccionPendiente({
+            codigoSala: 'SKIP01',
+            forzar: true
         });
 
         expect(segundoSalto.partida.turnoActualUserId).toBe('u2');
@@ -417,10 +430,14 @@ describe('Pruebas Unitarias de la Capa Lógica - Motor de Juego (gameLogic)', ()
             turnosPendientes: 1
         });
 
-        const res = await gameLogic.jugarCarta({
+        await gameLogic.jugarCarta({
             codigoSala: 'ATTK01',
             userId: 'u1',
             tipoCarta: 'ATTACK'
+        });
+        const res = await gameLogic.resolverAccionPendiente({
+            codigoSala: 'ATTK01',
+            forzar: true
         });
 
         expect(res.evento).toBe('CARTA_JUGADA');
@@ -447,10 +464,14 @@ describe('Pruebas Unitarias de la Capa Lógica - Motor de Juego (gameLogic)', ()
             turnosPendientes: 1
         });
 
-        const res = await gameLogic.jugarCarta({
+        await gameLogic.jugarCarta({
             codigoSala: 'FUTU01',
             userId: 'u1',
             tipoCarta: 'SEE_FUTURE'
+        });
+        const res = await gameLogic.resolverAccionPendiente({
+            codigoSala: 'FUTU01',
+            forzar: true
         });
 
         expect(res.evento).toBe('VISION_FUTURO');
@@ -477,10 +498,14 @@ describe('Pruebas Unitarias de la Capa Lógica - Motor de Juego (gameLogic)', ()
             turnosPendientes: 1
         });
 
-        const res = await gameLogic.jugarCarta({
+        await gameLogic.jugarCarta({
             codigoSala: 'SHUF01',
             userId: 'u1',
-            tipoCarta: 'SHUFFLE',
+            tipoCarta: 'SHUFFLE'
+        });
+        const res = await gameLogic.resolverAccionPendiente({
+            codigoSala: 'SHUF01',
+            forzar: true,
             rng: () => 0
         });
 
@@ -507,11 +532,15 @@ describe('Pruebas Unitarias de la Capa Lógica - Motor de Juego (gameLogic)', ()
             turnosPendientes: 1
         });
 
-        const res = await gameLogic.jugarCarta({
+        await gameLogic.jugarCarta({
             codigoSala: 'FAVR01',
             userId: 'u1',
             tipoCarta: 'FAVOR',
-            objetivoUserId: 'u2',
+            objetivoUserId: 'u2'
+        });
+        const res = await gameLogic.resolverAccionPendiente({
+            codigoSala: 'FAVR01',
+            forzar: true,
             rng: () => 0
         });
 
@@ -538,11 +567,15 @@ describe('Pruebas Unitarias de la Capa Lógica - Motor de Juego (gameLogic)', ()
             turnosPendientes: 1
         });
 
-        const res = await gameLogic.jugarCarta({
+        await gameLogic.jugarCarta({
             codigoSala: 'CATS01',
             userId: 'u1',
             tipoCarta: 'CAT_1',
-            objetivoUserId: 'u2',
+            objetivoUserId: 'u2'
+        });
+        const res = await gameLogic.resolverAccionPendiente({
+            codigoSala: 'CATS01',
+            forzar: true,
             rng: () => 0
         });
 
@@ -822,6 +855,209 @@ describe('Pruebas Unitarias de la Capa Lógica - Motor de Juego (gameLogic)', ()
         ).rejects.toMatchObject({
             message: 'El identificador del usuario es obligatorio',
             statusCode: 400
+        });
+    });
+
+    describe('Carta NOPE (¡Alto ahí!) y contra-Stop (¡Yup!)', () => {
+        test('Jugar carta cancelable abre WAITING_NOPE_WINDOW, la muestra en vistaJugador y bloquea otras jugadas o robos', async () => {
+            await gameModel.crearPartidaDatos({
+                codigoSala: 'NOPE01',
+                estado: 'PLAYING',
+                jugadores: [
+                    { userId: 'u1', username: 'p1', mano: ['SKIP', 'SHUFFLE'], vivo: true },
+                    { userId: 'u2', username: 'p2', mano: ['DEFUSE'], vivo: true }
+                ],
+                mazo: ['BOMB', 'SKIP'],
+                descartes: [],
+                turnoActualIndex: 0,
+                turnoActualUserId: 'u1',
+                turnosPendientes: 1
+            });
+
+            const res = await gameLogic.jugarCarta({
+                codigoSala: 'NOPE01',
+                userId: 'u1',
+                tipoCarta: 'SKIP'
+            });
+
+            expect(res.evento).toBe('VENTANA_NOPE_ABIERTA');
+            expect(res.partida.estado).toBe('WAITING_NOPE_WINDOW');
+            expect(res.accionPendiente).toMatchObject({
+                autorUserId: 'u1',
+                tipoCarta: 'SKIP',
+                nopes: []
+            });
+
+            const vistaU2 = gameLogic.obtenerVistaJugador(res.partida, 'u2');
+            expect(vistaU2.estado).toBe('WAITING_NOPE_WINDOW');
+            expect(vistaU2.accionPendiente).toMatchObject({
+                tipoCarta: 'SKIP',
+                totalNopes: 0,
+                canceladaActualmente: false
+            });
+
+            await expect(
+                gameLogic.robarCarta({ codigoSala: 'NOPE01', userId: 'u1' })
+            ).rejects.toMatchObject({ statusCode: 400 });
+
+            await expect(
+                gameLogic.jugarCarta({ codigoSala: 'NOPE01', userId: 'u1', tipoCarta: 'SHUFFLE' })
+            ).rejects.toMatchObject({ statusCode: 400 });
+        });
+
+        test('Un NOPE impar jugado fuera de turno cancela la acción al expirar la ventana y mantiene el turno', async () => {
+            await gameModel.crearPartidaDatos({
+                codigoSala: 'NOPE02',
+                estado: 'PLAYING',
+                jugadores: [
+                    { userId: 'u1', username: 'p1', mano: ['ATTACK', 'DEFUSE'], vivo: true },
+                    { userId: 'u2', username: 'p2', mano: ['NOPE'], vivo: true }
+                ],
+                mazo: ['SKIP', 'BOMB'],
+                descartes: [],
+                turnoActualIndex: 0,
+                turnoActualUserId: 'u1',
+                turnosPendientes: 1
+            });
+
+            const abierta = await gameLogic.jugarCarta({
+                codigoSala: 'NOPE02',
+                userId: 'u1',
+                tipoCarta: 'ATTACK',
+                duracionVentanaMs: 5000
+            });
+            const expiraInicial = new Date(abierta.accionPendiente.expiraEn).getTime();
+
+            const nope1 = await gameLogic.jugarNope({
+                codigoSala: 'NOPE02',
+                userId: 'u2',
+                duracionVentanaMs: 8000
+            });
+            expect(nope1.evento).toBe('NOPE_JUGADO');
+            expect(nope1.canceladaActualmente).toBe(true);
+            expect(nope1.totalNopes).toBe(1);
+            expect(new Date(nope1.accionPendiente.expiraEn).getTime()).toBeGreaterThanOrEqual(expiraInicial);
+
+            const resuelta = await gameLogic.resolverAccionPendiente({
+                codigoSala: 'NOPE02',
+                forzar: true
+            });
+
+            expect(resuelta.evento).toBe('ACCION_CANCELADA_POR_NOPE');
+            expect(resuelta.partida.estado).toBe('PLAYING');
+            expect(resuelta.partida.accionPendiente).toBeNull();
+            expect(resuelta.partida.turnoActualUserId).toBe('u1');
+            expect(resuelta.partida.turnosPendientes).toBe(1);
+            expect(resuelta.partida.descartes).toEqual(['ATTACK', 'NOPE']);
+        });
+
+        test('Dos NOPE encadenados (¡YUP!) reactivan la acción original y la ejecutan al resolverse', async () => {
+            await gameModel.crearPartidaDatos({
+                codigoSala: 'NOPE03',
+                estado: 'PLAYING',
+                jugadores: [
+                    { userId: 'u1', username: 'p1', mano: ['ATTACK', 'NOPE'], vivo: true },
+                    { userId: 'u2', username: 'p2', mano: ['NOPE', 'DEFUSE'], vivo: true }
+                ],
+                mazo: ['SKIP', 'BOMB'],
+                descartes: [],
+                turnoActualIndex: 0,
+                turnoActualUserId: 'u1',
+                turnosPendientes: 1
+            });
+
+            await gameLogic.jugarCarta({ codigoSala: 'NOPE03', userId: 'u1', tipoCarta: 'ATTACK' });
+            await gameLogic.jugarNope({ codigoSala: 'NOPE03', userId: 'u2' });
+
+            const yup = await gameLogic.jugarNope({ codigoSala: 'NOPE03', userId: 'u1' });
+            expect(yup.canceladaActualmente).toBe(false);
+            expect(yup.totalNopes).toBe(2);
+
+            const resuelta = await gameLogic.resolverAccionPendiente({
+                codigoSala: 'NOPE03',
+                forzar: true
+            });
+
+            expect(resuelta.evento).toBe('CARTA_JUGADA');
+            expect(resuelta.tipoCarta).toBe('ATTACK');
+            expect(resuelta.partida.estado).toBe('PLAYING');
+            expect(resuelta.partida.turnoActualUserId).toBe('u2');
+            expect(resuelta.partida.turnosPendientes).toBe(2);
+            expect(resuelta.partida.descartes).toEqual(['ATTACK', 'NOPE', 'NOPE']);
+        });
+
+        test('Error: Rechaza NOPE inválido (en turno normal, sin carta o eliminado) y BOMB/DEFUSE no abren ventana', async () => {
+            await gameModel.crearPartidaDatos({
+                codigoSala: 'NOPE04',
+                estado: 'PLAYING',
+                jugadores: [
+                    { userId: 'u1', username: 'p1', mano: ['NOPE', 'DEFUSE'], vivo: true },
+                    { userId: 'u2', username: 'p2', mano: ['SKIP'], vivo: true },
+                    { userId: 'u3', username: 'p3', mano: ['NOPE'], vivo: false }
+                ],
+                mazo: ['BOMB'],
+                descartes: [],
+                turnoActualIndex: 0,
+                turnoActualUserId: 'u1',
+                turnosPendientes: 1
+            });
+
+            await expect(
+                gameLogic.jugarCarta({ codigoSala: 'NOPE04', userId: 'u1', tipoCarta: 'NOPE' })
+            ).rejects.toMatchObject({ statusCode: 400 });
+
+            await expect(
+                gameLogic.jugarNope({ codigoSala: 'NOPE04', userId: 'u1' })
+            ).rejects.toMatchObject({ statusCode: 400 });
+
+            const roboBomba = await gameLogic.robarCarta({ codigoSala: 'NOPE04', userId: 'u1' });
+            expect(roboBomba.evento).toBe('BOMBA_DESACTIVADA_PENDIENTE_POSICION');
+            expect(roboBomba.partida.estado).toBe('WAITING_DEFUSE_INSERT');
+
+            await expect(
+                gameLogic.jugarNope({ codigoSala: 'NOPE04', userId: 'u1' })
+            ).rejects.toMatchObject({ statusCode: 400 });
+
+            await gameLogic.reinsertarBomba({ codigoSala: 'NOPE04', userId: 'u1', posicionBomba: 0 });
+            await gameLogic.jugarCarta({ codigoSala: 'NOPE04', userId: 'u2', tipoCarta: 'SKIP' });
+
+            await expect(
+                gameLogic.jugarNope({ codigoSala: 'NOPE04', userId: 'u2' })
+            ).rejects.toMatchObject({ message: 'No tienes ninguna carta ¡Alto ahí! en tu mano', statusCode: 400 });
+
+            await expect(
+                gameLogic.jugarNope({ codigoSala: 'NOPE04', userId: 'u3' })
+            ).rejects.toMatchObject({ statusCode: 403 });
+        });
+
+        test('Error: resolverAccionPendiente exige expiración si forzar es false', async () => {
+            await gameModel.crearPartidaDatos({
+                codigoSala: 'NOPE05',
+                estado: 'PLAYING',
+                jugadores: [
+                    { userId: 'u1', username: 'p1', mano: ['SKIP'], vivo: true },
+                    { userId: 'u2', username: 'p2', mano: ['DEFUSE'], vivo: true }
+                ],
+                mazo: ['BOMB'],
+                descartes: [],
+                turnoActualIndex: 0,
+                turnoActualUserId: 'u1',
+                turnosPendientes: 1
+            });
+
+            await gameLogic.jugarCarta({
+                codigoSala: 'NOPE05',
+                userId: 'u1',
+                tipoCarta: 'SKIP',
+                duracionVentanaMs: 5000
+            });
+
+            await expect(
+                gameLogic.resolverAccionPendiente({ codigoSala: 'NOPE05', forzar: false })
+            ).rejects.toMatchObject({
+                message: 'La ventana de ¡Alto ahí! aún no ha expirado',
+                statusCode: 400
+            });
         });
     });
 });

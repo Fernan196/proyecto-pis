@@ -5,9 +5,27 @@ const gameLogic = require('./gameLogic');
 const logger = require('./logger');
 
 let ioInstance = null;
+const temporizadoresNope = new Map();
 
 function normalizarCodigoSala(codigo) {
     return typeof codigo === 'string' ? codigo.trim().toUpperCase() : '';
+}
+
+function cancelarTemporizadorNope(codigoSala) {
+    const codigo = normalizarCodigoSala(codigoSala);
+    if (!codigo) return;
+    const timer = temporizadoresNope.get(codigo);
+    if (timer) {
+        clearTimeout(timer);
+        temporizadoresNope.delete(codigo);
+    }
+}
+
+function limpiarTemporizadoresNope() {
+    for (const timer of temporizadoresNope.values()) {
+        clearTimeout(timer);
+    }
+    temporizadoresNope.clear();
 }
 
 /**
@@ -76,7 +94,7 @@ function emitirEstadoPartidaPorJugador(partida, meta = {}) {
 }
 
 /**
- * Envía únicamente al jugador activo las 3 próximas cartas vistas con SEE_FUTURE.
+ * Emite únicamente al jugador activo las 3 próximas cartas vistas con SEE_FUTURE.
  */
 function emitirCartasFuturoPrivadas(userId, codigoSala, cartasFuturo) {
     if (!ioInstance || !userId) return;
@@ -84,6 +102,62 @@ function emitirCartasFuturoPrivadas(userId, codigoSala, cartasFuturo) {
         codigoSala: normalizarCodigoSala(codigoSala),
         cartasFuturo
     });
+}
+
+/**
+ * Notifica a la sala la apertura o actualización de la ventana de reacción de ¡Alto ahí!.
+ */
+function emitirVentanaNope(codigoSala, accionPendiente) {
+    const codigo = normalizarCodigoSala(codigoSala);
+    if (!ioInstance || !codigo) return;
+    ioInstance.to(`room:${codigo}`).emit('game:nope_window', {
+        codigoSala: codigo,
+        accionPendiente
+    });
+}
+
+/**
+ * Programa (o reinicia) el temporizador de resolución automática de la ventana de ¡Alto ahí!.
+ */
+function programarResolucionNope(codigoSala, duracionMs = gameLogic.DURACION_VENTANA_NOPE_MS) {
+    const codigo = normalizarCodigoSala(codigoSala);
+    if (!codigo) return;
+
+    cancelarTemporizadorNope(codigo);
+    const espera = Number.isFinite(duracionMs) && duracionMs > 0
+        ? duracionMs
+        : gameLogic.DURACION_VENTANA_NOPE_MS;
+
+    const timer = setTimeout(async () => {
+        temporizadoresNope.delete(codigo);
+        try {
+            const resultado = await gameLogic.resolverAccionPendiente({
+                codigoSala: codigo,
+                forzar: true
+            });
+
+            if (resultado.evento === 'VISION_FUTURO') {
+                emitirCartasFuturoPrivadas(
+                    resultado.autorUserId,
+                    resultado.partida.codigoSala,
+                    resultado.cartasFuturo
+                );
+            }
+
+            emitirEstadoPartidaPorJugador(resultado.partida, {
+                evento: resultado.evento,
+                tipoCarta: resultado.tipoCarta,
+                actorUserId: resultado.autorUserId
+            });
+        } catch (err) {
+            logger.registrarError('NOPE_RESOLUCION_ERROR', err, { codigoSala: codigo });
+        }
+    }, espera);
+
+    if (typeof timer.unref === 'function') {
+        timer.unref();
+    }
+    temporizadoresNope.set(codigo, timer);
 }
 
 /**
@@ -144,13 +218,42 @@ function configurarSocketIO(io) {
                     objetivoUserId: payload?.objetivoUserId
                 });
 
-                if (resultado.evento === 'VISION_FUTURO') {
+                if (resultado.evento === 'VENTANA_NOPE_ABIERTA') {
+                    emitirVentanaNope(resultado.partida.codigoSala, resultado.accionPendiente);
+                    programarResolucionNope(resultado.partida.codigoSala);
+                } else if (resultado.evento === 'VISION_FUTURO') {
                     emitirCartasFuturoPrivadas(userId, resultado.partida.codigoSala, resultado.cartasFuturo);
                 }
 
                 emitirEstadoPartidaPorJugador(resultado.partida, {
                     evento: resultado.evento,
                     tipoCarta: resultado.tipoCarta,
+                    actorUserId: userId
+                });
+
+                ack?.({
+                    ok: true,
+                    ...resultado,
+                    vistaJugador: gameLogic.obtenerVistaJugador(resultado.partida, userId)
+                });
+            } catch (err) {
+                ack?.({ ok: false, error: err.message });
+            }
+        });
+
+        socket.on('game:nope', async (payload = {}, ack) => {
+            try {
+                const resultado = await gameLogic.jugarNope({
+                    codigoSala: payload?.codigoSala,
+                    userId
+                });
+
+                emitirVentanaNope(resultado.partida.codigoSala, resultado.accionPendiente);
+                programarResolucionNope(resultado.partida.codigoSala);
+
+                emitirEstadoPartidaPorJugador(resultado.partida, {
+                    evento: resultado.evento,
+                    canceladaActualmente: resultado.canceladaActualmente,
                     actorUserId: userId
                 });
 
@@ -219,5 +322,9 @@ module.exports = {
     emitirActualizacionSala,
     emitirSalaEliminada,
     emitirEstadoPartidaPorJugador,
-    emitirCartasFuturoPrivadas
+    emitirCartasFuturoPrivadas,
+    emitirVentanaNope,
+    programarResolucionNope,
+    cancelarTemporizadorNope,
+    limpiarTemporizadoresNope
 };

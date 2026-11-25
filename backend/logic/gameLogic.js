@@ -13,15 +13,17 @@ const CATALOGO_CARTAS = {
     SEE_FUTURE: { nombre: 'Visión Felina', copiasBase: 5 },
     SHUFFLE: { nombre: 'Terremoto en el Arenero', copiasBase: 4 },
     FAVOR: { nombre: 'Soborno de Atún', copiasBase: 4 },
+    NOPE: { nombre: '¡Alto ahí!', copiasBase: 5 },
     CAT_1: { nombre: 'Michi Cósmico', copiasBase: 4 },
     CAT_2: { nombre: 'Michi Ninja', copiasBase: 4 },
     CAT_3: { nombre: 'Michi Pirata', copiasBase: 4 },
     CAT_4: { nombre: 'Michi Zombie', copiasBase: 4 }
 };
 
-const CARTAS_BASE_REPARTO = ['SKIP', 'ATTACK', 'SEE_FUTURE', 'SHUFFLE', 'FAVOR', 'CAT_1', 'CAT_2', 'CAT_3', 'CAT_4'];
+const CARTAS_BASE_REPARTO = ['SKIP', 'ATTACK', 'SEE_FUTURE', 'SHUFFLE', 'FAVOR', 'NOPE', 'CAT_1', 'CAT_2', 'CAT_3', 'CAT_4'];
 const TIPOS_GATO = ['CAT_1', 'CAT_2', 'CAT_3', 'CAT_4'];
 const CARTAS_INICIALES_POR_JUGADOR = 7;
+const DURACION_VENTANA_NOPE_MS = 5000;
 
 function crearErrorHttp(mensaje, statusCode = 400) {
     const error = new Error(mensaje);
@@ -38,6 +40,9 @@ function validarEstadoYTirador(partida, userId) {
     }
     if (partida.estado === 'WAITING_DEFUSE_INSERT') {
         throw crearErrorHttp('Debes reinsertar el Michi Explosivo en el mazo antes de continuar', 400);
+    }
+    if (partida.estado === 'WAITING_NOPE_WINDOW') {
+        throw crearErrorHttp('Hay una acción pendiente en ventana de ¡Alto ahí!; espera a que se resuelva', 400);
     }
     if (String(partida.turnoActualUserId) !== String(userId)) {
         throw crearErrorHttp('No es tu turno', 403);
@@ -138,6 +143,7 @@ async function iniciarPartidaDirecta({ codigoSala, jugadores, rng = Math.random 
         turnoActualUserId: jugadoresPartida[0].userId,
         turnosPendientes: 1,
         jugadorDesactivando: null,
+        accionPendiente: null,
         ganadorId: null,
         ganadorUsername: null,
         historialAcciones: [`Partida iniciada con ${jugadoresPartida.length} jugadores.`]
@@ -473,6 +479,21 @@ function obtenerVistaJugador(partida, userId) {
     const riesgoBombaPorcentaje = mazo.length === 0 ? 0 : Math.round((bombasRestantes / mazo.length) * 100);
     const solicitante = partida.jugadores.find(j => String(j.userId) === String(userId));
     const descartes = [...(partida.descartes || [])];
+    const accionRaw = partida.accionPendiente;
+    const nopes = Array.isArray(accionRaw?.nopes) ? accionRaw.nopes : [];
+    const accionPendiente = accionRaw
+        ? {
+            autorUserId: accionRaw.autorUserId,
+            autorUsername: accionRaw.autorUsername,
+            tipoCarta: accionRaw.tipoCarta,
+            objetivoUserId: accionRaw.objetivoUserId || null,
+            objetivoUsername: accionRaw.objetivoUsername || null,
+            nopes: nopes.map(n => ({ userId: n.userId, username: n.username })),
+            totalNopes: nopes.length,
+            canceladaActualmente: nopes.length % 2 === 1,
+            expiraEn: accionRaw.expiraEn ? new Date(accionRaw.expiraEn).toISOString() : null
+        }
+        : null;
 
     return {
         id: partida.id,
@@ -486,6 +507,7 @@ function obtenerVistaJugador(partida, userId) {
         turnoActualUserId: partida.turnoActualUserId,
         turnosPendientes: partida.turnosPendientes,
         jugadorDesactivando: partida.jugadorDesactivando,
+        accionPendiente,
         ganadorId: partida.ganadorId,
         ganadorUsername: partida.ganadorUsername,
         historialAcciones: [...(partida.historialAcciones || [])],
@@ -508,9 +530,133 @@ async function obtenerPartidaVistaJugador({ codigoSala, userId }) {
 }
 
 /**
- * Ejecuta una carta de acción o pareja de Michis en el turno del jugador.
+ * Ejecuta el efecto real de una carta pendiente una vez vencida la ventana de NOPE
+ * con un número par de cancelaciones (0, 2, 4...).
  */
-async function jugarCarta({ codigoSala, userId, tipoCarta, objetivoUserId = null, rng = Math.random }) {
+async function aplicarEfectoAccion(partida, accion, rng = Math.random) {
+    const jugadores = partida.jugadores.map(j => ({ ...j, mano: [...j.mano] }));
+    const jugadorActual = jugadores[partida.turnoActualIndex];
+    const historialAcciones = [...(partida.historialAcciones || [])];
+    const tipo = accion.tipoCarta;
+
+    if (tipo === 'SKIP') {
+        const siguienteTurno = avanzarTurno(jugadores, partida.turnoActualIndex, partida.turnosPendientes);
+        historialAcciones.push(`${jugadorActual.username} completó Salto Gatuno y terminó su turno sin robar.`);
+
+        const actualizada = await gameModel.actualizarPartidaDatos(partida.codigoSala, {
+            estado: 'PLAYING',
+            accionPendiente: null,
+            jugadores,
+            ...siguienteTurno,
+            historialAcciones
+        });
+        logger.registrarEvento('CARTA_JUGADA', { codigoSala: partida.codigoSala, userId: String(accion.autorUserId), tipoCarta: tipo });
+        return { evento: 'CARTA_JUGADA', tipoCarta: 'SKIP', autorUserId: String(accion.autorUserId), partida: actualizada };
+    }
+
+    if (tipo === 'ATTACK') {
+        const sig = avanzarTurno(jugadores, partida.turnoActualIndex, 1);
+        const siguienteTurno = { ...sig, turnosPendientes: 2 };
+        historialAcciones.push(
+            `${jugadorActual.username} aplicó Emboscada Felina contra ${jugadores[sig.turnoActualIndex].username} (2 turnos).`
+        );
+
+        const actualizada = await gameModel.actualizarPartidaDatos(partida.codigoSala, {
+            estado: 'PLAYING',
+            accionPendiente: null,
+            jugadores,
+            ...siguienteTurno,
+            historialAcciones
+        });
+        logger.registrarEvento('CARTA_JUGADA', { codigoSala: partida.codigoSala, userId: String(accion.autorUserId), tipoCarta: tipo });
+        return { evento: 'CARTA_JUGADA', tipoCarta: 'ATTACK', autorUserId: String(accion.autorUserId), partida: actualizada };
+    }
+
+    if (tipo === 'SEE_FUTURE') {
+        const cartasFuturo = partida.mazo.slice(0, 3);
+        historialAcciones.push(`${jugadorActual.username} resolvió Visión Felina para espiar el mazo.`);
+
+        const actualizada = await gameModel.actualizarPartidaDatos(partida.codigoSala, {
+            estado: 'PLAYING',
+            accionPendiente: null,
+            jugadores,
+            historialAcciones
+        });
+        logger.registrarEvento('CARTA_JUGADA', { codigoSala: partida.codigoSala, userId: String(accion.autorUserId), tipoCarta: tipo });
+        return {
+            evento: 'VISION_FUTURO',
+            tipoCarta: 'SEE_FUTURE',
+            autorUserId: String(accion.autorUserId),
+            cartasFuturo,
+            partida: actualizada
+        };
+    }
+
+    if (tipo === 'SHUFFLE') {
+        const nuevoMazo = barajarArray(partida.mazo, rng);
+        historialAcciones.push(`${jugadorActual.username} aplicó Terremoto en el Arenero y barajó el mazo.`);
+
+        const actualizada = await gameModel.actualizarPartidaDatos(partida.codigoSala, {
+            estado: 'PLAYING',
+            accionPendiente: null,
+            jugadores,
+            mazo: nuevoMazo,
+            historialAcciones
+        });
+        logger.registrarEvento('CARTA_JUGADA', { codigoSala: partida.codigoSala, userId: String(accion.autorUserId), tipoCarta: tipo });
+        return { evento: 'MAZO_BARAJADO', tipoCarta: 'SHUFFLE', autorUserId: String(accion.autorUserId), partida: actualizada };
+    }
+
+    // FAVOR o pareja de Michis (CAT_1..4)
+    const objetivo = jugadores.find(j => String(j.userId) === String(accion.objetivoUserId));
+    let cartaRobadaRival = null;
+
+    if (objetivo && objetivo.vivo && objetivo.mano.length > 0) {
+        const idxRobado = Math.floor(rng() * objetivo.mano.length);
+        [cartaRobadaRival] = objetivo.mano.splice(idxRobado, 1);
+        jugadorActual.mano.push(cartaRobadaRival);
+        historialAcciones.push(
+            `${jugadorActual.username} robó una carta a ${objetivo.username} con ${CATALOGO_CARTAS[tipo].nombre}.`
+        );
+    } else {
+        historialAcciones.push(
+            `${jugadorActual.username} intentó robar a ${accion.objetivoUsername || 'un rival'}, pero ya no tenía cartas.`
+        );
+    }
+
+    const actualizada = await gameModel.actualizarPartidaDatos(partida.codigoSala, {
+        estado: 'PLAYING',
+        accionPendiente: null,
+        jugadores,
+        historialAcciones
+    });
+    logger.registrarEvento('CARTA_JUGADA', {
+        codigoSala: partida.codigoSala,
+        userId: String(accion.autorUserId),
+        tipoCarta: tipo,
+        objetivoUserId: String(accion.objetivoUserId)
+    });
+
+    return {
+        evento: 'CARTA_ROBADA_RIVAL',
+        tipoCarta: tipo,
+        autorUserId: String(accion.autorUserId),
+        objetivoUserId: String(accion.objetivoUserId),
+        cartaRobadaRival,
+        partida: actualizada
+    };
+}
+
+/**
+ * Inicia una carta de acción o pareja de Michis abriendo siempre una ventana de ¡Alto ahí! (5 s).
+ */
+async function jugarCarta({
+    codigoSala,
+    userId,
+    tipoCarta,
+    objetivoUserId = null,
+    duracionVentanaMs = DURACION_VENTANA_NOPE_MS
+}) {
     if (!userId) {
         throw crearErrorHttp('El identificador del usuario es obligatorio', 400);
     }
@@ -522,6 +668,9 @@ async function jugarCarta({ codigoSala, userId, tipoCarta, objetivoUserId = null
     validarEstadoYTirador(partida, userId);
 
     const tipo = tipoCarta.trim().toUpperCase();
+    if (tipo === 'NOPE') {
+        throw crearErrorHttp('La carta ¡Alto ahí! solo puede jugarse durante una ventana de reacción activa', 400);
+    }
     if (!CATALOGO_CARTAS[tipo] || tipo === 'BOMB' || tipo === 'DEFUSE') {
         throw crearErrorHttp('Esta carta no se puede jugar manualmente en tu turno', 400);
     }
@@ -541,111 +690,175 @@ async function jugarCarta({ codigoSala, userId, tipoCarta, objetivoUserId = null
         throw crearErrorHttp('No tienes esa carta en tu mano', 400);
     }
 
-    if (tipo === 'SKIP') {
-        consumirCartasMano(jugadorActual.mano, descartes, 'SKIP', 1);
-        const siguienteTurno = avanzarTurno(jugadores, partida.turnoActualIndex, partida.turnosPendientes);
-        historialAcciones.push(`${jugadorActual.username} jugó Salto Gatuno y terminó su turno sin robar.`);
+    let objetivo = null;
+    if (tipo === 'FAVOR' || esParejaGato) {
+        if (!objetivoUserId || String(objetivoUserId) === String(userId)) {
+            throw crearErrorHttp('Debes elegir a otro jugador como objetivo', 400);
+        }
 
-        const actualizada = await gameModel.actualizarPartidaDatos(partida.codigoSala, {
-            jugadores,
-            descartes,
-            ...siguienteTurno,
-            historialAcciones
-        });
-        logger.registrarEvento('CARTA_JUGADA', { codigoSala: partida.codigoSala, userId: String(userId), tipoCarta: tipo });
-        return { evento: 'CARTA_JUGADA', tipoCarta: 'SKIP', partida: actualizada };
-    }
-
-    if (tipo === 'ATTACK') {
-        consumirCartasMano(jugadorActual.mano, descartes, 'ATTACK', 1);
-        const sig = avanzarTurno(jugadores, partida.turnoActualIndex, 1);
-        const siguienteTurno = { ...sig, turnosPendientes: 2 };
-        historialAcciones.push(
-            `${jugadorActual.username} lanzó Emboscada Felina contra ${jugadores[sig.turnoActualIndex].username} (2 turnos).`
-        );
-
-        const actualizada = await gameModel.actualizarPartidaDatos(partida.codigoSala, {
-            jugadores,
-            descartes,
-            ...siguienteTurno,
-            historialAcciones
-        });
-        logger.registrarEvento('CARTA_JUGADA', { codigoSala: partida.codigoSala, userId: String(userId), tipoCarta: tipo });
-        return { evento: 'CARTA_JUGADA', tipoCarta: 'ATTACK', partida: actualizada };
-    }
-
-    if (tipo === 'SEE_FUTURE') {
-        consumirCartasMano(jugadorActual.mano, descartes, 'SEE_FUTURE', 1);
-        const cartasFuturo = partida.mazo.slice(0, 3);
-        historialAcciones.push(`${jugadorActual.username} usó Visión Felina para espiar el mazo.`);
-
-        const actualizada = await gameModel.actualizarPartidaDatos(partida.codigoSala, {
-            jugadores,
-            descartes,
-            historialAcciones
-        });
-        logger.registrarEvento('CARTA_JUGADA', { codigoSala: partida.codigoSala, userId: String(userId), tipoCarta: tipo });
-        return { evento: 'VISION_FUTURO', tipoCarta: 'SEE_FUTURE', cartasFuturo, partida: actualizada };
-    }
-
-    if (tipo === 'SHUFFLE') {
-        consumirCartasMano(jugadorActual.mano, descartes, 'SHUFFLE', 1);
-        const nuevoMazo = barajarArray(partida.mazo, rng);
-        historialAcciones.push(`${jugadorActual.username} usó Terremoto en el Arenero y barajó el mazo.`);
-
-        const actualizada = await gameModel.actualizarPartidaDatos(partida.codigoSala, {
-            jugadores,
-            descartes,
-            mazo: nuevoMazo,
-            historialAcciones
-        });
-        logger.registrarEvento('CARTA_JUGADA', { codigoSala: partida.codigoSala, userId: String(userId), tipoCarta: tipo });
-        return { evento: 'MAZO_BARAJADO', tipoCarta: 'SHUFFLE', partida: actualizada };
-    }
-
-    // FAVOR o pareja de Michis (CAT_1..4): roban 1 carta aleatoria de un rival vivo
-    if (!objetivoUserId || String(objetivoUserId) === String(userId)) {
-        throw crearErrorHttp('Debes elegir a otro jugador como objetivo', 400);
-    }
-
-    const objetivo = jugadores.find(j => String(j.userId) === String(objetivoUserId));
-    if (!objetivo || !objetivo.vivo) {
-        throw crearErrorHttp('El jugador objetivo no es válido o está eliminado', 400);
-    }
-    if (objetivo.mano.length === 0) {
-        throw crearErrorHttp('El jugador objetivo no tiene cartas en su mano', 400);
+        objetivo = jugadores.find(j => String(j.userId) === String(objetivoUserId));
+        if (!objetivo || !objetivo.vivo) {
+            throw crearErrorHttp('El jugador objetivo no es válido o está eliminado', 400);
+        }
+        if (objetivo.mano.length === 0) {
+            throw crearErrorHttp('El jugador objetivo no tiene cartas en su mano', 400);
+        }
     }
 
     const cantidadConsumo = esParejaGato ? 2 : 1;
     consumirCartasMano(jugadorActual.mano, descartes, tipo, cantidadConsumo);
 
-    const idxRobado = Math.floor(rng() * objetivo.mano.length);
-    const [cartaRobadaRival] = objetivo.mano.splice(idxRobado, 1);
-    jugadorActual.mano.push(cartaRobadaRival);
+    const accionPendiente = {
+        autorUserId: String(userId),
+        autorUsername: jugadorActual.username,
+        tipoCarta: tipo,
+        objetivoUserId: objetivo ? String(objetivo.userId) : null,
+        objetivoUsername: objetivo ? objetivo.username : null,
+        nopes: [],
+        expiraEn: new Date(Date.now() + duracionVentanaMs).toISOString()
+    };
 
+    const sufijoObjetivo = objetivo ? ` sobre ${objetivo.username}` : '';
     historialAcciones.push(
-        `${jugadorActual.username} robó una carta a ${objetivo.username} con ${CATALOGO_CARTAS[tipo].nombre}.`
+        `${jugadorActual.username} jugó ${CATALOGO_CARTAS[tipo].nombre}${sufijoObjetivo} (ventana de ¡Alto ahí! abierta).`
     );
+
+    const actualizada = await gameModel.actualizarPartidaDatos(partida.codigoSala, {
+        estado: 'WAITING_NOPE_WINDOW',
+        jugadores,
+        descartes,
+        accionPendiente,
+        historialAcciones
+    });
+
+    logger.registrarEvento('VENTANA_NOPE_ABIERTA', {
+        codigoSala: partida.codigoSala,
+        userId: String(userId),
+        tipoCarta: tipo
+    });
+
+    return {
+        evento: 'VENTANA_NOPE_ABIERTA',
+        tipoCarta: tipo,
+        autorUserId: String(userId),
+        accionPendiente: actualizada.accionPendiente,
+        partida: actualizada
+    };
+}
+
+/**
+ * Permite a cualquier jugador vivo con carta NOPE cancelar o reactivar (¡Yup!)
+ * la acción que se encuentra actualmente en ventana de reacción, reiniciando el contador.
+ */
+async function jugarNope({ codigoSala, userId, duracionVentanaMs = DURACION_VENTANA_NOPE_MS }) {
+    if (!userId) {
+        throw crearErrorHttp('El identificador del usuario es obligatorio', 400);
+    }
+
+    const partida = await obtenerPartida(codigoSala);
+    if (partida.estado !== 'WAITING_NOPE_WINDOW' || !partida.accionPendiente) {
+        throw crearErrorHttp('No hay ninguna acción activa que se pueda cancelar con ¡Alto ahí!', 400);
+    }
+
+    const jugadores = partida.jugadores.map(j => ({ ...j, mano: [...j.mano] }));
+    const jugador = jugadores.find(j => String(j.userId) === String(userId));
+    if (!jugador || !jugador.vivo) {
+        throw crearErrorHttp('Solo un jugador vivo de la partida puede jugar ¡Alto ahí!', 403);
+    }
+
+    if (!jugador.mano.includes('NOPE')) {
+        throw crearErrorHttp('No tienes ninguna carta ¡Alto ahí! en tu mano', 400);
+    }
+
+    const descartes = [...(partida.descartes || [])];
+    consumirCartasMano(jugador.mano, descartes, 'NOPE', 1);
+
+    const nopesActuales = Array.isArray(partida.accionPendiente.nopes)
+        ? partida.accionPendiente.nopes.map(n => ({ userId: String(n.userId), username: String(n.username) }))
+        : [];
+    nopesActuales.push({ userId: String(userId), username: jugador.username });
+
+    const canceladaActualmente = nopesActuales.length % 2 === 1;
+    const nuevaAccionPendiente = {
+        ...partida.accionPendiente,
+        nopes: nopesActuales,
+        expiraEn: new Date(Date.now() + duracionVentanaMs).toISOString()
+    };
+
+    const historialAcciones = [
+        ...(partida.historialAcciones || []),
+        canceladaActualmente
+            ? `${jugador.username} lanzó ¡Alto ahí! (acción cancelada provisionalmente).`
+            : `${jugador.username} respondió con contra-¡Alto ahí! (¡YUP! La acción vuelve a activarse).`
+    ];
 
     const actualizada = await gameModel.actualizarPartidaDatos(partida.codigoSala, {
         jugadores,
         descartes,
+        accionPendiente: nuevaAccionPendiente,
         historialAcciones
     });
-    logger.registrarEvento('CARTA_JUGADA', {
+
+    logger.registrarEvento('NOPE_JUGADO', {
         codigoSala: partida.codigoSala,
         userId: String(userId),
-        tipoCarta: tipo,
-        objetivoUserId: String(objetivoUserId)
+        totalNopes: nopesActuales.length,
+        canceladaActualmente
     });
 
     return {
-        evento: 'CARTA_ROBADA_RIVAL',
-        tipoCarta: tipo,
-        objetivoUserId: String(objetivoUserId),
-        cartaRobadaRival,
+        evento: 'NOPE_JUGADO',
+        canceladaActualmente,
+        totalNopes: nopesActuales.length,
+        accionPendiente: actualizada.accionPendiente,
         partida: actualizada
     };
+}
+
+/**
+ * Resuelve la acción pendiente al expirar la ventana de ¡Alto ahí! (impar = cancelada, par = ejecutada).
+ */
+async function resolverAccionPendiente({ codigoSala, forzar = false, rng = Math.random }) {
+    const partida = await obtenerPartida(codigoSala);
+    if (partida.estado !== 'WAITING_NOPE_WINDOW' || !partida.accionPendiente) {
+        throw crearErrorHttp('No hay ninguna acción pendiente por resolver', 400);
+    }
+
+    const accion = partida.accionPendiente;
+    if (!forzar && accion.expiraEn && Date.now() < new Date(accion.expiraEn).getTime()) {
+        throw crearErrorHttp('La ventana de ¡Alto ahí! aún no ha expirado', 400);
+    }
+
+    const totalNopes = Array.isArray(accion.nopes) ? accion.nopes.length : 0;
+    if (totalNopes % 2 === 1) {
+        const nombreCarta = CATALOGO_CARTAS[accion.tipoCarta]?.nombre || accion.tipoCarta;
+        const historialAcciones = [
+            ...(partida.historialAcciones || []),
+            `${nombreCarta} de ${accion.autorUsername} quedó cancelada por ¡Alto ahí!.`
+        ];
+
+        const actualizada = await gameModel.actualizarPartidaDatos(partida.codigoSala, {
+            estado: 'PLAYING',
+            accionPendiente: null,
+            historialAcciones
+        });
+
+        logger.registrarEvento('ACCION_CANCELADA_POR_NOPE', {
+            codigoSala: partida.codigoSala,
+            tipoCarta: accion.tipoCarta,
+            totalNopes
+        });
+
+        return {
+            evento: 'ACCION_CANCELADA_POR_NOPE',
+            tipoCarta: accion.tipoCarta,
+            autorUserId: String(accion.autorUserId),
+            totalNopes,
+            partida: actualizada
+        };
+    }
+
+    return await aplicarEfectoAccion(partida, accion, rng);
 }
 
 /**
@@ -692,6 +905,7 @@ async function obtenerSesionJuegoActiva(userId) {
 module.exports = {
     CATALOGO_CARTAS,
     TIPOS_GATO,
+    DURACION_VENTANA_NOPE_MS,
     barajarArray,
     construirMazoInicial,
     iniciarPartidaDirecta,
@@ -703,5 +917,7 @@ module.exports = {
     avanzarTurno,
     robarCarta,
     reinsertarBomba,
-    jugarCarta
+    jugarCarta,
+    jugarNope,
+    resolverAccionPendiente
 };

@@ -21,6 +21,50 @@ const jugadorPartidaSchema = new mongoose.Schema({
     }
 }, { _id: false });
 
+const nopeEntradaSchema = new mongoose.Schema({
+    userId: {
+        type: String,
+        required: true
+    },
+    username: {
+        type: String,
+        required: true,
+        trim: true
+    }
+}, { _id: false });
+
+const accionPendienteSchema = new mongoose.Schema({
+    autorUserId: {
+        type: String,
+        required: true
+    },
+    autorUsername: {
+        type: String,
+        required: true,
+        trim: true
+    },
+    tipoCarta: {
+        type: String,
+        required: true
+    },
+    objetivoUserId: {
+        type: String,
+        default: null
+    },
+    objetivoUsername: {
+        type: String,
+        default: null
+    },
+    nopes: {
+        type: [nopeEntradaSchema],
+        default: []
+    },
+    expiraEn: {
+        type: Date,
+        default: null
+    }
+}, { _id: false });
+
 const gameSchema = new mongoose.Schema({
     codigoSala: {
         type: String,
@@ -31,7 +75,7 @@ const gameSchema = new mongoose.Schema({
     },
     estado: {
         type: String,
-        enum: ['PLAYING', 'WAITING_DEFUSE_INSERT', 'FINISHED'],
+        enum: ['PLAYING', 'WAITING_DEFUSE_INSERT', 'WAITING_NOPE_WINDOW', 'FINISHED'],
         default: 'PLAYING'
     },
     jugadores: {
@@ -61,6 +105,10 @@ const gameSchema = new mongoose.Schema({
     },
     jugadorDesactivando: {
         type: String,
+        default: null
+    },
+    accionPendiente: {
+        type: accionPendienteSchema,
         default: null
     },
     ganadorId: {
@@ -95,6 +143,21 @@ function usarBaseDeDatos() {
     return mongoose.connection.readyState === 1;
 }
 
+function clonarAccionPendiente(accion) {
+    if (!accion) return null;
+    return {
+        autorUserId: String(accion.autorUserId),
+        autorUsername: String(accion.autorUsername),
+        tipoCarta: String(accion.tipoCarta),
+        objetivoUserId: accion.objetivoUserId ? String(accion.objetivoUserId) : null,
+        objetivoUsername: accion.objetivoUsername ? String(accion.objetivoUsername) : null,
+        nopes: Array.isArray(accion.nopes)
+            ? accion.nopes.map(n => ({ userId: String(n.userId), username: String(n.username) }))
+            : [],
+        expiraEn: accion.expiraEn ? new Date(accion.expiraEn).toISOString() : null
+    };
+}
+
 function clonarPartida(partida) {
     return {
         ...partida,
@@ -108,6 +171,7 @@ function clonarPartida(partida) {
             : [],
         mazo: Array.isArray(partida.mazo) ? [...partida.mazo] : [],
         descartes: Array.isArray(partida.descartes) ? [...partida.descartes] : [],
+        accionPendiente: clonarAccionPendiente(partida.accionPendiente),
         historialAcciones: Array.isArray(partida.historialAcciones) ? [...partida.historialAcciones] : []
     };
 }
@@ -134,6 +198,7 @@ async function crearPartidaDatos(datos) {
         turnoActualUserId: String(datos.turnoActualUserId),
         turnosPendientes: datos.turnosPendientes ?? 1,
         jugadorDesactivando: datos.jugadorDesactivando ?? null,
+        accionPendiente: clonarAccionPendiente(datos.accionPendiente),
         ganadorId: datos.ganadorId ?? null,
         ganadorUsername: datos.ganadorUsername ?? null,
         historialAcciones: datos.historialAcciones || [],
@@ -213,7 +278,7 @@ async function buscarPartidaActivaPorJugador(userId) {
 
     if (usarBaseDeDatos()) {
         const doc = await Game.findOne({
-            estado: { $in: ['PLAYING', 'WAITING_DEFUSE_INSERT'] },
+            estado: { $in: ['PLAYING', 'WAITING_DEFUSE_INSERT', 'WAITING_NOPE_WINDOW'] },
             'jugadores.userId': uid
         }).sort({ updatedAt: -1 });
         return doc ? doc.toJSON() : null;
@@ -221,7 +286,7 @@ async function buscarPartidaActivaPorJugador(userId) {
 
     const partida = Array.from(partidasEnMemoria.values())
         .reverse()
-        .find(p => ['PLAYING', 'WAITING_DEFUSE_INSERT'].includes(p.estado)
+        .find(p => ['PLAYING', 'WAITING_DEFUSE_INSERT', 'WAITING_NOPE_WINDOW'].includes(p.estado)
             && p.jugadores.some(j => String(j.userId) === uid));
 
     return partida ? clonarPartida(partida) : null;
