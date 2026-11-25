@@ -203,4 +203,22 @@ describe('Pruebas Unitarias de Tiempo Real (socketManager)', () => {
         expect(io._emittedRooms['user:u1'][0].data.vistaJugador.miMano).toEqual(['DEFUSE', 'SKIP']);
         expect(io._emittedRooms['user:u2'][0].data.vistaJugador.turnoActualUserId).toBe('u2');
     });
+
+    test('Al conectar une el socket al canal lobby y emitirActualizacionLobby difunde lobby:updated', () => {
+        const io = crearMockIO();
+        socketManager.configurarSocketIO(io);
+
+        const socketU1 = crearMockSocket({ id: 'u1', username: 'p1' });
+        io._handlers.connection(socketU1);
+
+        expect(socketU1._joined).toContain('user:u1');
+        expect(socketU1._joined).toContain('lobby');
+
+        const salas = [{ codigo: 'ABC123', nombre: 'Mesa 1', estado: 'WAITING' }];
+        socketManager.emitirActualizacionLobby(salas);
+
+        expect(io._emittedRooms.lobby).toEqual([
+            { event: 'lobby:updated', data: salas }
+        ]);
+    });
 });

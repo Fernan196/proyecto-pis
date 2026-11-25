@@ -146,6 +146,41 @@ body {
     cursor: not-allowed;
 }
 
+.oauth-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.btn-google {
+    width: 100%;
+    padding: 0.75rem 1.25rem;
+    background: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #0f172a;
+    border-radius: 0.75rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    transition: all 0.2s ease;
+}
+
+.btn-google svg {
+    width: 1.25rem;
+    height: 1.25rem;
+    flex-shrink: 0;
+}
+
+.btn-google:hover {
+    background: #f1f5f9;
+    transform: translateY(-1px);
+    box-shadow: 0 8px 16px -6px rgba(255, 255, 255, 0.25);
+}
+
 .btn-github {
     width: 100%;
     padding: 0.75rem 1.25rem;

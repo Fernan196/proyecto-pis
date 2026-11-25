@@ -244,24 +244,36 @@ function createUserLogic({ userRepo, mailer, logger } = {}) {
         return { mensaje: 'Cuenta eliminada exitosamente' };
     }
 
-    async function procesarLoginGitHub({ githubId, email, username }) {
+    async function autenticarUsuarioOAuth({
+        proveedor,
+        campoId,
+        proveedorId,
+        email,
+        username,
+        defaultUsername,
+        eventoLog,
+        metodo
+    }) {
         if (!email) {
-            throw new Error('El perfil de GitHub no proporciona un correo electrónico');
+            throw new Error(`El perfil de ${proveedor} no proporciona un correo electrónico`);
         }
 
+        const idExterno = proveedorId !== undefined && proveedorId !== null ? String(proveedorId) : null;
         let usuario = await userRepo.buscarPorEmail(email);
 
         if (!usuario) {
             usuario = await userRepo.crearUsuarioDatos({
-                username: username || 'Usuario GitHub',
+                username: username || defaultUsername,
                 email,
-                githubId: githubId.toString(),
+                [campoId]: idExterno,
                 rol: 'user',
                 confirmado: true
             });
-        } else if (!usuario.confirmado) {
+        } else if (!usuario.confirmado || (idExterno && !usuario[campoId])) {
             const cambios = { confirmado: true };
-            if (!usuario.githubId) cambios.githubId = githubId.toString();
+            if (idExterno && !usuario[campoId]) {
+                cambios[campoId] = idExterno;
+            }
             usuario = await userRepo.actualizarUsuarioDatos(usuario.id, cambios);
         }
 
@@ -276,10 +288,10 @@ function createUserLogic({ userRepo, mailer, logger } = {}) {
             { expiresIn: '8h' }
         );
 
-        log.registrarEvento('LOGIN_OAUTH_GITHUB', {
+        log.registrarEvento(eventoLog, {
             userId: String(usuario.id),
             rol: usuario.rol,
-            metodo: 'github'
+            metodo
         });
 
         return {
@@ -291,6 +303,32 @@ function createUserLogic({ userRepo, mailer, logger } = {}) {
                 rol: usuario.rol
             }
         };
+    }
+
+    async function procesarLoginGitHub({ githubId, email, username }) {
+        return await autenticarUsuarioOAuth({
+            proveedor: 'GitHub',
+            campoId: 'githubId',
+            proveedorId: githubId,
+            email,
+            username,
+            defaultUsername: 'Usuario GitHub',
+            eventoLog: 'LOGIN_OAUTH_GITHUB',
+            metodo: 'github'
+        });
+    }
+
+    async function procesarLoginGoogle({ googleId, email, username }) {
+        return await autenticarUsuarioOAuth({
+            proveedor: 'Google',
+            campoId: 'googleId',
+            proveedorId: googleId,
+            email,
+            username,
+            defaultUsername: 'Usuario Google',
+            eventoLog: 'LOGIN_OAUTH_GOOGLE',
+            metodo: 'google'
+        });
     }
 
     /**
@@ -308,6 +346,7 @@ function createUserLogic({ userRepo, mailer, logger } = {}) {
         comprobarActivo,
         eliminarUsuario,
         procesarLoginGitHub,
+        procesarLoginGoogle,
         cambiarRolUsuario,
         obtenerRanking
     };

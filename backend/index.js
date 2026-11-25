@@ -7,6 +7,7 @@ const { Server } = require('socket.io');
 
 const userRepo = require('./data/userModel');
 const { createMailer } = require('./services/mailer');
+const { createGoogleAuth } = require('./services/googleAuth');
 const { createUserLogic } = require('./logic/userLogic');
 const roomLogic = require('./logic/roomLogic');
 const gameLogic = require('./logic/gameLogic');
@@ -24,6 +25,11 @@ const BACKEND_URL = process.env.BACKEND_URL || `http://localhost:${PORT}`;
 const mailer = createMailer({
     emailUser: process.env.EMAIL_USER,
     emailPass: process.env.EMAIL_PASS,
+    backendUrl: BACKEND_URL
+});
+const googleAuth = createGoogleAuth({
+    clientId: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
     backendUrl: BACKEND_URL
 });
 const userLogic = createUserLogic({ userRepo, mailer, logger });
@@ -124,6 +130,31 @@ app.get('/api/auth/github/callback', async (req, res) => {
     }
 });
 
+// 4b. OAuth Google
+app.get('/api/auth/google', (req, res) => {
+    try {
+        const authUrl = googleAuth.construirUrlAutorizacion();
+        return res.redirect(authUrl);
+    } catch (err) {
+        logger.registrarError('OAUTH_GOOGLE_ERROR', err);
+        return res.redirect(`${FRONTEND_URL}/login?error=oauth_google_no_configurado`);
+    }
+});
+
+app.get('/api/auth/google/callback', async (req, res) => {
+    const { code } = req.query;
+    if (!code) return res.redirect(`${FRONTEND_URL}/login?error=oauth_fallido`);
+
+    try {
+        const perfil = await googleAuth.intercambiarCodigoPorPerfil(code);
+        const { token, user } = await userLogic.procesarLoginGoogle(perfil);
+        return res.redirect(`${FRONTEND_URL}/login?oauth_token=${token}&user=${encodeURIComponent(JSON.stringify(user))}`);
+    } catch (err) {
+        logger.registrarError('OAUTH_GOOGLE_ERROR', err);
+        return res.redirect(`${FRONTEND_URL}/login?error=oauth_error`);
+    }
+});
+
 // 5. Listar usuarios (solo admin)
 app.get('/api/usuarios', authMiddleware, adminMiddleware, async (req, res) => {
     try {
@@ -175,6 +206,15 @@ app.get('/api/logs', authMiddleware, adminMiddleware, (req, res) => {
 });
 
 // 10. Gestión de salas (Lobby)
+async function notificarLobbySalas() {
+    try {
+        const salas = await roomLogic.listarSalasDisponibles();
+        socketManager.emitirActualizacionLobby(salas);
+    } catch (err) {
+        logger.registrarError('SOCKET_LOBBY_EMIT_ERROR', err);
+    }
+}
+
 app.post('/api/salas', authMiddleware, async (req, res) => {
     try {
         const sala = await roomLogic.crearSala({
@@ -183,6 +223,7 @@ app.post('/api/salas', authMiddleware, async (req, res) => {
             nombre: req.body?.nombre,
             maxJugadores: req.body?.maxJugadores
         });
+        await notificarLobbySalas();
         res.status(201).json(sala);
     } catch (error) {
         res.status(error.statusCode || 400).json({ error: error.message });
@@ -215,6 +256,7 @@ app.post('/api/salas/:codigo/unirse', authMiddleware, async (req, res) => {
             username: req.user.username || req.user.email
         });
         socketManager.emitirActualizacionSala(sala.codigo, sala);
+        await notificarLobbySalas();
         res.json(sala);
     } catch (error) {
         res.status(error.statusCode || 400).json({ error: error.message });
@@ -232,6 +274,7 @@ app.post('/api/salas/:codigo/salir', authMiddleware, async (req, res) => {
         } else if (resultado.sala) {
             socketManager.emitirActualizacionSala(resultado.sala.codigo, resultado.sala);
         }
+        await notificarLobbySalas();
         res.json(resultado);
     } catch (error) {
         res.status(error.statusCode || 400).json({ error: error.message });
@@ -245,6 +288,7 @@ app.post('/api/salas/:codigo/iniciar', authMiddleware, async (req, res) => {
             solicitanteId: req.user.id
         });
         socketManager.emitirActualizacionSala(resultado.codigo, resultado);
+        await notificarLobbySalas();
         socketManager.emitirEstadoPartidaPorJugador(resultado.partida, {
             evento: 'PARTIDA_INICIADA',
             actorUserId: String(req.user.id)
